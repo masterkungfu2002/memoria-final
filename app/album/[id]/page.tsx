@@ -1,5 +1,6 @@
 import type { Album } from "@/lib/types";
 import { MothersDayJourney } from "@/components/journey/MothersDayJourney";
+import ImagePreloader from "@/components/album/ImagePreloader";
 import { headers } from "next/headers";
 
 export default async function AlbumPage({
@@ -15,7 +16,10 @@ export default async function AlbumPage({
   const res = await fetch(new URL(`/api/album/${encodeURIComponent(id)}`, baseUrl), { cache: "no-store" });
   if (res.ok) {
     const album = (await res.json()) as Album;
-    return <MothersDayJourney album={album} />;
+    return <>
+        <ImagePreloader album={album} />
+        <MothersDayJourney album={album} />
+      </>;
   }
   const j = (await res.json().catch(() => null)) as { error?: string } | null;
   const msg = j?.error ?? "Album not found.";
