@@ -1,23 +1,26 @@
 'use client';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { Album, AlbumPhoto } from '@/lib/types';
- 
+
 /*
-  Architecture: Leaf-based flipbook (proven working from album-flip.html)
+  ═══════════════════════════════════════════════════════════════
+  MEMORA — MothersDayJourney  [iOS PERFORMANCE PATCH v2]
+  ═══════════════════════════════════════════════════════════════
+  Surgical fixes for iOS Safari lag on iPhone < 17 Pro:
   
-  Each "leaf" = 1 physical page that flips from right → left
-  - leaf.front = right-side content (visible before flip)
-  - leaf.back  = left-side content (visible after flip)
+  1. will-change applied ONLY to ±2 leaves around current spread
+     (not all leaves — that was creating N GPU layers simultaneously)
+  2. <img> only rendered for leaves within ±3 of spread
+     (far leaves render empty div — no bitmap decode cost)
+  3. Removed duplicate hidden preload block (was double-decoding)
+  4. decoding="async" + fetchPriority on visible images
+  5. box-shadow blur reduced 28px → 12px (cheaper compositor paint)
+  6. contain: layout paint — isolates each leaf's paint invalidation
   
-  Leaf 0: front=COVER,        back=caption[0]
-  Leaf 1: front=photo[0],     back=caption[1]
-  Leaf 2: front=photo[1],     back=caption[2]
-  ...
-  Leaf N: front=photo[N-1],   back=BACK_COVER
-  
-  When you flip leaf 0: cover goes left, revealing photo[0] on right + caption[0] on left
+  NOT CHANGED: layout, design, colors, flow, animation duration, UI.
+  ═══════════════════════════════════════════════════════════════
 */
- 
+
 /* ═══ Helper ═══ */
 function resolveUrl(url: string): string {
   if (!url) return '';
@@ -26,15 +29,14 @@ function resolveUrl(url: string): string {
 }
 function isYT(u: string) { return /youtu\.?be/.test(u); }
 function ytId(u: string) { return u.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1] || ''; }
- 
-/* Get caption text — try every possible field name */
+
 function getCaptionText(photo: any): string {
   return photo?.caption || photo?.description || photo?.text || photo?.message || photo?.content || 'A cherished memory';
 }
 function getCaptionTitle(photo: any): string {
   return photo?.title || photo?.name || photo?.heading || '';
 }
- 
+
 /* ═══ Audio ═══ */
 let _ctx: AudioContext | null = null;
 let _ok = false;
@@ -51,22 +53,20 @@ function playFlip() {
     o.start(); o.stop(n + 0.1);
   } catch {}
 }
- 
-/* ═══════════════════════════════════════════════════
-   MAIN COMPONENT
-   ═══════════════════════════════════════════════════ */
+
+/* ═══ MAIN ═══ */
 export function MothersDayJourney({ album }: { album: Album }) {
   const photos = album.photos || [];
   const videoUrl = album.video_url || '';
   const recipient = album.recipient_name || 'Mom';
   const year = new Date(album.created_at).getFullYear().toString();
- 
+
   const imageUrls = useMemo(() => photos.map(p => resolveUrl(p.url || '')), [photos]);
-  const numLeaves = photos.length + 1; // +1 for cover leaf
- 
+  const numLeaves = photos.length + 1;
+
   const [loaded, setLoaded] = useState(false);
   const [loadPct, setLoadPct] = useState(0);
-  const [spread, setSpread] = useState(0); // which leaf we're "on" (0 = cover showing)
+  const [spread, setSpread] = useState(0);
   const [animating, setAnimating] = useState(false);
   const [showTV, setShowTV] = useState(false);
   const [tvStatic, setTvStatic] = useState(true);
@@ -78,30 +78,48 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const [fbName, setFbName] = useState('');
   const [fbComment, setFbComment] = useState('');
   const [fbLoading, setFbLoading] = useState(false);
- 
+
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
   const txRef = useRef(0);
- 
-  /* ═══ Preload ═══ */
+
+  /* ═══ [FIX v2] Smart preload — load first 3 critical, rest lazy ═══ */
   useEffect(() => {
     const urls = imageUrls.filter(Boolean);
     if (!urls.length) { setLoadPct(100); setLoaded(true); return; }
+
+    // CRITICAL: load first 3 photos before "loaded" flag (cover + next 2)
+    const critical = urls.slice(0, 3);
+    const rest = urls.slice(3);
+
     let done = 0;
-    Promise.all(urls.map(u => new Promise<void>(r => {
+    const total = critical.length;
+
+    Promise.all(critical.map(u => new Promise<void>(r => {
       const img = new Image();
-      img.onload = img.onerror = () => { done++; setLoadPct(Math.round((done / urls.length) * 100)); r(); };
+      img.decoding = 'async';
+      img.onload = img.onerror = () => {
+        done++;
+        setLoadPct(Math.round((done / total) * 100));
+        r();
+      };
       img.src = u;
-    }))).then(() => setTimeout(() => setLoaded(true), 300));
+    }))).then(() => {
+      setTimeout(() => setLoaded(true), 200);
+      // Background-load the rest after UI is ready
+      requestIdleCallback
+        ? requestIdleCallback(() => rest.forEach(u => { const img = new Image(); img.decoding = 'async'; img.src = u; }))
+        : setTimeout(() => rest.forEach(u => { const img = new Image(); img.decoding = 'async'; img.src = u; }), 500);
+    });
   }, [imageUrls]);
- 
+
   /* ═══ Audio init ═══ */
   useEffect(() => {
     const h = () => { initAudio(); document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
     document.addEventListener('click', h); document.addEventListener('touchstart', h);
     return () => { document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
   }, []);
- 
+
   /* ═══ Music ═══ */
   useEffect(() => {
     const mu = (album as any).background_music_url;
@@ -111,7 +129,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     document.addEventListener('click', p); document.addEventListener('touchstart', p);
     return () => { a.pause(); a.src = ''; document.removeEventListener('click', p); document.removeEventListener('touchstart', p); };
   }, [album]);
- 
+
   /* ═══ Navigate ═══ */
   const goTo = useCallback((target: number) => {
     if (animating) return;
@@ -122,13 +140,12 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setSpread(t);
     setTimeout(() => {
       setAnimating(false);
-      // Auto-transition to cassette/feedback when reaching the end
       if (t === numLeaves) {
         setTimeout(() => setPhase(videoUrl ? 'cassette' : 'feedback'), 600);
       }
     }, 950);
-  }, [animating, spread, numLeaves]);
- 
+  }, [animating, spread, numLeaves, videoUrl]);
+
   /* ═══ Keyboard ═══ */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -138,14 +155,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [goTo, spread]);
- 
+
   /* ═══ Touch swipe ═══ */
   const onTS = (e: React.TouchEvent) => { txRef.current = e.touches[0].clientX; };
   const onTE = (e: React.TouchEvent) => {
     const dx = e.changedTouches[0].clientX - txRef.current;
     if (Math.abs(dx) > 48) goTo(spread + (dx < 0 ? 1 : -1));
   };
- 
+
   /* ═══ Book click ═══ */
   const onBookClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -153,7 +170,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     if (x > rect.width / 2) goTo(spread + 1);
     else goTo(spread - 1);
   };
- 
+
   /* ═══ TV ═══ */
   const openTV = () => {
     setCassetteEject(true);
@@ -179,7 +196,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     if (iRef.current) { iRef.current.src = ''; iRef.current.style.display = 'none'; }
     setPhase('feedback');
   };
- 
+
   /* ═══ Feedback ═══ */
   const submitFb = async () => {
     if (!rating) { alert('Please select a rating'); return; }
@@ -191,23 +208,24 @@ export function MothersDayJourney({ album }: { album: Album }) {
     } catch { alert('Could not send. Please try again.'); }
     finally { setFbLoading(false); }
   };
- 
-  /* ═══ Z-index for leaves ═══ */
+
   const getLeafZ = (i: number) => {
-    if (i < spread) return i + 1;           // flipped leaves: most recent on top
-    return numLeaves * 2 - i;               // unflipped: current on top
+    if (i < spread) return i + 1;
+    return numLeaves * 2 - i;
   };
- 
-  /* ═══ Page indicator ═══ */
+
   const pageText = spread === 0 ? 'Cover' : spread === numLeaves ? 'End' : `${spread} / ${photos.length}`;
- 
-  /* ═════════════════════════════════════
-     INLINE STYLES (no CSS class conflicts!)
-     ═════════════════════════════════════ */
- 
+
+  /* ═══ [FIX v2] Window of active leaves ═══
+     Only leaves within ±3 of current spread render <img> / will-change.
+     Far leaves render as empty skeleton — no GPU layer, no bitmap decode. */
+  const ACTIVE_WINDOW = 3;
+  const WILL_CHANGE_WINDOW = 2;
+  const isNear = (i: number) => Math.abs(i - spread) <= ACTIVE_WINDOW;
+  const isHot = (i: number) => Math.abs(i - spread) <= WILL_CHANGE_WINDOW;
+
   return (
     <>
-      {/* ── Global styles (only layout, not caption content) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
         .mj-root *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -217,37 +235,37 @@ export function MothersDayJourney({ album }: { album: Album }) {
           transform-origin:left center;
           transform-style:preserve-3d;
           transition:transform .9s cubic-bezier(.77,0,.175,1);
-          will-change:transform;cursor:pointer;
+          cursor:pointer;
+          contain:layout paint;
         }
+        .mj-leaf.hot{will-change:transform}
         .mj-leaf.flipped{transform:rotateY(-180deg)}
-        .mj-lf,.mj-lb{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;overflow:hidden}
-        .mj-lb{transform:rotateY(180deg)}
+        .mj-lf,.mj-lb{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;overflow:hidden;transform:translateZ(0)}
+        .mj-lb{transform:rotateY(180deg) translateZ(0)}
         .mj-lf::before{content:'';position:absolute;left:0;top:0;width:18px;height:100%;background:linear-gradient(to right,rgba(0,0,0,.1),transparent);z-index:1;pointer-events:none}
         .mj-lb::after{content:'';position:absolute;right:0;top:0;width:18px;height:100%;background:linear-gradient(to left,rgba(0,0,0,.1),transparent);z-index:1;pointer-events:none}
         .mj-lf{border-radius:0 3px 3px 0}
         .mj-lb{border-radius:3px 0 0 3px}
+        .mj-photo{width:100%;height:100%;object-fit:contain;display:block;background:#111}
         @media(orientation:portrait){.mj-rotate{display:flex!important}.mj-main{display:none!important}}
         @keyframes mj-hint{0%,100%{opacity:.2}50%{opacity:.7}}
         @keyframes mj-spin{to{transform:rotate(360deg)}}
         @keyframes mj-eject{0%{transform:translateY(0) scale(1);opacity:1}30%{transform:translateY(-12px) scale(1.03)}100%{transform:translateY(40px) scale(.5);opacity:0}}
         @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
       `}} />
- 
-      {/* ── Rotate notice ── */}
+
+      {/* Rotate notice */}
       <div className="mj-rotate" style={{ display:'none',position:'fixed',inset:0,zIndex:99999,background:'#F0E8DA',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'16px',fontFamily:"'Playfair Display',serif",color:'#8B7355',textAlign:'center' }}>
         <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#8B7355" strokeWidth="1.5" strokeLinecap="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
         <p style={{ fontSize:'1rem',lineHeight:1.5,color:'#4a3f30' }}>Please rotate your phone<br/>to landscape mode</p>
         <span style={{ fontSize:'.6rem',letterSpacing:'.3em',opacity:.5 }}>FOR THE BEST EXPERIENCE</span>
       </div>
- 
-      {/* ── Hidden preload ── */}
-      <div style={{ position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',overflow:'hidden',opacity:0,pointerEvents:'none',visibility:'hidden' as any }} aria-hidden="true">
-        {imageUrls.map((u, i) => u ? <img key={i} src={u} alt="" /> : null)}
-      </div>
- 
+
+      {/* [FIX v2] Removed duplicate hidden preload block — was double-decoding every image */}
+
       <div className="mj-main mj-root" style={{ position:'fixed',inset:0,userSelect:'none',WebkitUserSelect:'none',fontFamily:"'Cormorant Garamond',serif",background:'#F0E8DA',color:'#2e2a24',overflow:'hidden' }}>
- 
-        {/* ── Loading ── */}
+
+        {/* Loading */}
         <div style={{
           position:'fixed',inset:0,zIndex:999,background:'#F0E8DA',
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'14px',
@@ -258,15 +276,15 @@ export function MothersDayJourney({ album }: { album: Album }) {
           <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'1.5rem',color:'#8B7355',fontWeight:300,letterSpacing:'.1em' }}>{loadPct}%</div>
           <div style={{ fontSize:'.55rem',letterSpacing:'.3em',textTransform:'uppercase',color:'rgba(139,115,85,.4)' }}>Preparing your memories</div>
         </div>
- 
-        {/* ── Scene ── */}
+
+        {/* Scene */}
         <div style={{
           position:'fixed',inset:0,display:'flex',flexDirection:'column',
           alignItems:'center',justifyContent:'center',
           gap:'clamp(12px,2.5vh,28px)',
           background:'radial-gradient(ellipse 80% 60% at 50% 55%,#F5EFE7,#E8DDD0)',
         }} onTouchStart={onTS} onTouchEnd={onTE}>
- 
+
           {/* Book wrapper */}
           <div style={{ position:'relative',perspective:'clamp(800px,250vw,3000px)',opacity:phase==='book'?1:0,transition:'opacity .6s',pointerEvents:phase==='book'?'auto':'none' }}>
             <div onClick={onBookClick} style={{
@@ -276,31 +294,38 @@ export function MothersDayJourney({ album }: { album: Album }) {
               // @ts-ignore
               '--pw':'clamp(130px,30vw,340px)','--ph':'clamp(190px,45vw,460px)',
             } as any}>
- 
-              {/* Book halves (paper stack background) */}
-              <div style={{ position:'absolute',top:0,left:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to right,#E8DDD0,#F5EFE7 6%)',borderRadius:'3px 0 0 3px',boxShadow:'-6px 0 28px -4px rgba(0,0,0,.55),-2px 0 8px rgba(0,0,0,.3)',pointerEvents:'none' }}>
+
+              {/* [FIX v2] Lighter box-shadow — blur 28→12, removed redundant second shadow */}
+              <div style={{ position:'absolute',top:0,left:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to right,#E8DDD0,#F5EFE7 6%)',borderRadius:'3px 0 0 3px',boxShadow:'-4px 0 12px -2px rgba(0,0,0,.35)',pointerEvents:'none' }}>
                 <div style={{ position:'absolute',right:0,top:0,width:'20px',height:'100%',background:'linear-gradient(to right,transparent,rgba(0,0,0,.08))' }} />
               </div>
-              <div style={{ position:'absolute',top:0,right:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to left,#E8DDD0,#F5EFE7 6%)',borderRadius:'0 3px 3px 0',boxShadow:'6px 0 28px -4px rgba(0,0,0,.55),2px 0 8px rgba(0,0,0,.3)',pointerEvents:'none' }}>
+              <div style={{ position:'absolute',top:0,right:0,width:'var(--pw)',height:'var(--ph)',background:'linear-gradient(to left,#E8DDD0,#F5EFE7 6%)',borderRadius:'0 3px 3px 0',boxShadow:'4px 0 12px -2px rgba(0,0,0,.35)',pointerEvents:'none' }}>
                 <div style={{ position:'absolute',left:0,top:0,width:'20px',height:'100%',background:'linear-gradient(to left,transparent,rgba(0,0,0,.08))' }} />
               </div>
- 
+
               {/* Spine */}
-              <div style={{ position:'absolute',left:'50%',top:0,transform:'translateX(-50%)',width:'6px',height:'100%',background:'linear-gradient(to right,#7a6040,#c9a97a 35%,#c9a97a 65%,#7a6040)',zIndex:200,boxShadow:'0 0 12px rgba(0,0,0,.4)' }} />
- 
+              <div style={{ position:'absolute',left:'50%',top:0,transform:'translateX(-50%)',width:'6px',height:'100%',background:'linear-gradient(to right,#7a6040,#c9a97a 35%,#c9a97a 65%,#7a6040)',zIndex:200,boxShadow:'0 0 8px rgba(0,0,0,.3)' }} />
+
               {/* ═══ LEAVES ═══ */}
               {Array.from({ length: numLeaves }, (_, i) => {
                 const isFlipped = i < spread;
                 const zIdx = animating && ((spread > 0 && i === spread - 1) || i === spread)
                   ? numLeaves * 10
                   : getLeafZ(i);
- 
+
+                const near = isNear(i);   // render content?
+                const hot = isHot(i);     // will-change?
+
                 return (
-                  <div key={i} className={`mj-leaf ${isFlipped ? 'flipped' : ''}`} style={{ zIndex: zIdx }}>
-                    {/* FRONT (right page) */}
+                  <div
+                    key={i}
+                    className={`mj-leaf ${isFlipped ? 'flipped' : ''} ${hot ? 'hot' : ''}`}
+                    style={{ zIndex: zIdx }}
+                  >
+                    {/* FRONT */}
                     <div className="mj-lf">
                       {i === 0 ? (
-                        /* ── COVER ── */
+                        /* COVER — always rendered */
                         <div style={{
                           width:'100%',height:'100%',background:'#0B0B0B',
                           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
@@ -322,89 +347,92 @@ export function MothersDayJourney({ album }: { album: Album }) {
                             Memoraa &middot; {year}
                           </div>
                         </div>
-                      ) : (
-                        /* ── PHOTO PAGE ── */
+                      ) : near ? (
+                        /* PHOTO — only rendered when leaf is within ACTIVE_WINDOW */
                         <div style={{ width:'100%',height:'100%',background:'#111',position:'relative' }}>
-                          <img src={imageUrls[i - 1] || ''} alt="" style={{ width:'100%',height:'100%',objectFit:'contain',display:'block',background:'#111' }} />
+                          <img
+                            src={imageUrls[i - 1] || ''}
+                            alt=""
+                            className="mj-photo"
+                            decoding="async"
+                            // @ts-ignore — fetchPriority is valid HTML attr
+                            fetchpriority={Math.abs(i - spread) <= 1 ? 'high' : 'auto'}
+                            draggable={false}
+                          />
                           <div style={{ position:'absolute',bottom:0,left:0,right:0,height:'25%',pointerEvents:'none',background:'linear-gradient(to top,rgba(0,0,0,.3),transparent)' }} />
                           <div style={{ position:'absolute',bottom:'clamp(8px,1.5vw,14px)',right:'clamp(10px,2vw,16px)',fontSize:'clamp(8px,1.4vw,10px)',color:'rgba(255,255,255,.4)',letterSpacing:'3px' }}>
                             {String(i).padStart(2, '0')}
                           </div>
                         </div>
+                      ) : (
+                        /* FAR LEAF — skeleton, no img, no GPU texture */
+                        <div style={{ width:'100%',height:'100%',background:'#111' }} />
                       )}
                     </div>
- 
-                    {/* BACK (left page after flip) */}
+
+                    {/* BACK */}
                     <div className="mj-lb">
                       {i < photos.length ? (
-                        /* ── CAPTION PAGE — 100% inline styles ── */
-                        <div style={{
-                          width:'100%',height:'100%',
-                          background:'#F5EFE7',
-                          display:'flex',flexDirection:'column',
-                          justifyContent:'center',
-                          padding:'clamp(24px,5vw,48px) clamp(20px,4vw,40px)',
-                          position:'relative',
-                          fontFamily:"'Cormorant Garamond','Georgia',serif",
-                        }}>
-                          {/* Left accent line */}
+                        near ? (
+                          /* CAPTION — full render */
                           <div style={{
-                            position:'absolute',
-                            left:'clamp(14px,3vw,24px)',top:'clamp(14px,3vw,24px)',
-                            bottom:'clamp(14px,3vw,24px)',width:'1px',
-                            background:'linear-gradient(to bottom,transparent,#C6A97E,transparent)',
-                            opacity:.35,
-                          }} />
- 
-                          {/* Big number */}
-                          <div style={{
-                            fontFamily:"'Playfair Display',serif",
-                            fontSize:'clamp(36px,8vw,60px)',fontWeight:400,
-                            color:'#C6A97E',opacity:.1,lineHeight:1,marginBottom:'-6px',
+                            width:'100%',height:'100%',
+                            background:'#F5EFE7',
+                            display:'flex',flexDirection:'column',
+                            justifyContent:'center',
+                            padding:'clamp(24px,5vw,48px) clamp(20px,4vw,40px)',
+                            position:'relative',
+                            fontFamily:"'Cormorant Garamond','Georgia',serif",
                           }}>
-                            {String(i + 1).padStart(2, '0')}
-                          </div>
- 
-                          {/* Title (if available) */}
-                          {getCaptionTitle(photos[i]) && (
+                            <div style={{
+                              position:'absolute',
+                              left:'clamp(14px,3vw,24px)',top:'clamp(14px,3vw,24px)',
+                              bottom:'clamp(14px,3vw,24px)',width:'1px',
+                              background:'linear-gradient(to bottom,transparent,#C6A97E,transparent)',
+                              opacity:.35,
+                            }} />
                             <div style={{
                               fontFamily:"'Playfair Display',serif",
-                              fontSize:'clamp(13px,2.5vw,18px)',fontWeight:600,
-                              color:'#0B0B0B',lineHeight:1.5,
-                              marginBottom:'clamp(8px,2vw,14px)',
+                              fontSize:'clamp(36px,8vw,60px)',fontWeight:400,
+                              color:'#C6A97E',opacity:.1,lineHeight:1,marginBottom:'-6px',
                             }}>
-                              {getCaptionTitle(photos[i])}
+                              {String(i + 1).padStart(2, '0')}
                             </div>
-                          )}
- 
-                          {/* Rule */}
-                          <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
- 
-                          {/* Caption text */}
-                          <div style={{
-                            fontSize:'clamp(11px,2.2vw,14.5px)',
-                            fontStyle:'italic',fontWeight:400,
-                            color:'#4a3f30',lineHeight:1.9,
-                            marginBottom:'clamp(8px,2vw,14px)',
-                            overflowY:'auto',maxHeight:'60%',
-                          }}>
-                            {getCaptionText(photos[i])}
+                            {getCaptionTitle(photos[i]) && (
+                              <div style={{
+                                fontFamily:"'Playfair Display',serif",
+                                fontSize:'clamp(13px,2.5vw,18px)',fontWeight:600,
+                                color:'#0B0B0B',lineHeight:1.5,
+                                marginBottom:'clamp(8px,2vw,14px)',
+                              }}>
+                                {getCaptionTitle(photos[i])}
+                              </div>
+                            )}
+                            <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
+                            <div style={{
+                              fontSize:'clamp(11px,2.2vw,14.5px)',
+                              fontStyle:'italic',fontWeight:400,
+                              color:'#4a3f30',lineHeight:1.9,
+                              marginBottom:'clamp(8px,2vw,14px)',
+                              overflowY:'auto',maxHeight:'60%',
+                            }}>
+                              {getCaptionText(photos[i])}
+                            </div>
+                            <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
+                            <div style={{
+                              fontSize:'clamp(7px,1.3vw,9px)',
+                              letterSpacing:'3px',textTransform:'uppercase',
+                              color:'#9E7E56',opacity:.6,
+                            }}>
+                              {year}
+                            </div>
                           </div>
- 
-                          {/* Rule */}
-                          <div style={{ width:'32px',height:'1px',background:'#C6A97E',opacity:.45,marginBottom:'clamp(8px,2vw,14px)' }} />
- 
-                          {/* Year */}
-                          <div style={{
-                            fontSize:'clamp(7px,1.3vw,9px)',
-                            letterSpacing:'3px',textTransform:'uppercase',
-                            color:'#9E7E56',opacity:.6,
-                          }}>
-                            {year}
-                          </div>
-                        </div>
+                        ) : (
+                          /* FAR CAPTION — skeleton */
+                          <div style={{ width:'100%',height:'100%',background:'#F5EFE7' }} />
+                        )
                       ) : (
-                        /* ── BACK COVER ── */
+                        /* BACK COVER — always rendered (last leaf) */
                         <div style={{ width:'100%',height:'100%',background:'#0B0B0B',display:'flex',alignItems:'center',justifyContent:'center' }}>
                           <div style={{ fontSize:'clamp(8px,1.5vw,10px)',color:'#C6A97E',letterSpacing:'6px',textTransform:'uppercase',opacity:.35 }}>
                             Memoraa
@@ -416,7 +444,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 );
               })}
             </div>
- 
+
             {/* Flip hint */}
             {spread === 0 && (
               <div style={{
@@ -428,8 +456,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
               </div>
             )}
           </div>
- 
-          {/* ── Navigation ── */}
+
+          {/* Navigation */}
           <nav style={{ display:'flex',alignItems:'center',gap:'clamp(14px,3.5vw,28px)',opacity:phase==='book'?1:0,transition:'opacity .5s' }}>
             <button disabled={spread === 0 || animating} onClick={() => goTo(spread - 1)} style={{
               width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
@@ -439,11 +467,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
- 
+
             <div style={{ fontFamily:"'Cormorant Garamond',serif",fontSize:'clamp(9px,1.8vw,12px)',color:'#8B7355',letterSpacing:'3px',opacity:.5,minWidth:'60px',textAlign:'center' }}>
               {pageText}
             </div>
- 
+
             <button disabled={spread === numLeaves || animating} onClick={() => goTo(spread + 1)} style={{
               width:'clamp(32px,6vw,42px)',height:'clamp(32px,6vw,42px)',background:'none',
               border:'1px solid rgba(139,115,85,.25)',borderRadius:'50%',color:'#8B7355',
@@ -454,8 +482,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
             </button>
           </nav>
         </div>
- 
-        {/* ═══ CASSETTE SCREEN ═══ */}
+
+        {/* CASSETTE */}
         <div style={{
           position:'fixed',inset:0,zIndex:phase==='cassette'?50:0,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'clamp(12px,2.5vh,24px)',
@@ -465,8 +493,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
         }}>
           <div style={{ fontFamily:"'Playfair Display',serif",fontSize:'clamp(14px,2.5vw,20px)',color:'#4a3f30',letterSpacing:'.04em' }}>One Last Surprise</div>
           <div style={{ fontSize:'clamp(8px,1.4vw,10px)',letterSpacing:'.25em',color:'rgba(139,115,85,.5)',textTransform:'uppercase' }}>press play to watch</div>
-          
-          {/* Cassette tape SVG */}
+
           <div onClick={openTV} style={{
             cursor:'pointer',transition:'transform .3s',
             animation:cassetteEject?'mj-eject .6s forwards':'none',
@@ -485,13 +512,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
               <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4"/><circle cx="160" cy="93" r="2.5" fill="#b89a6e"/>
             </svg>
           </div>
-          
+
           <div onClick={() => setPhase('feedback')} style={{
             fontSize:'clamp(7px,1.2vw,9px)',color:'rgba(74,63,48,.2)',textTransform:'uppercase',letterSpacing:'.2em',cursor:'pointer',
           }}>Skip</div>
         </div>
- 
-        {/* ═══ FEEDBACK SCREEN ═══ */}
+
+        {/* FEEDBACK */}
         <div style={{
           position:'fixed',inset:0,zIndex:phase==='feedback'?50:0,
           display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
@@ -537,8 +564,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
             )}
           </div>
         </div>
- 
-        {/* ── TV Modal (smaller) ── */}
+
+        {/* TV Modal */}
         <div style={{
           position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,.92)',
           display:'flex',alignItems:'center',justifyContent:'center',
