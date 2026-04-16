@@ -283,7 +283,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setBookState('opening');
     setTimeout(() => {
       setBookState('open');
-    }, 950);
+    }, 620);
   }, [bookState]);
 
   const onFlip = useCallback((e: any) => {
@@ -481,14 +481,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
         }
         
         .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
-        .mj-flipbook-wrap{animation:mj-flipbookReveal .6s ease both}
+        .mj-flipbook-wrap{animation:mj-flipbookReveal .18s ease both}
         .mj-closedbook{animation:mj-glow 4s ease-in-out infinite}
         .mj-closedbook:hover{transform:translateY(-4px) scale(1.01);transition:transform .35s ease}
         .mj-cover-rotating{
           transform-origin:left center;
           transform-style:preserve-3d;
           -webkit-transform-style:preserve-3d;
-          animation:mj-coverOpen 1.2s cubic-bezier(.5,.2,.2,1) forwards;
+          animation:mj-coverOpen .72s cubic-bezier(.55,.18,.2,1) forwards;
         }
         .mj-tooltip{animation:mj-tooltipIn 3.5s ease forwards}
       `}} />
@@ -579,19 +579,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
               perspective: '2500px',
               perspectiveOrigin: 'center center',
             }}>
-              {/* Inner blank page (shown as cover rotates away) */}
-              <div style={{
-                position: 'absolute',
-                left: '50%', top: 0,
-                width: dims.w, height: dims.h,
-                backgroundColor: C.page,
-                backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.03) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.04) 0%, transparent 40%)`,
-                borderRadius: '0 3px 3px 0',
-                boxShadow: 'inset 8px 0 12px -4px rgba(101,67,33,.15)',
-                opacity: bookState === 'opening' ? 1 : 0,
-                transition: 'opacity .3s ease .5s',
-              }} />
-
               {/* Cover */}
               <div
                 className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
