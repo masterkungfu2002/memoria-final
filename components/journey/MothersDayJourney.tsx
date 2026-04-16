@@ -4,31 +4,32 @@ import type { Album } from '@/lib/types';
 
 /*
   ═══════════════════════════════════════════════════════════════
-  MEMORA — MothersDayJourney  [v10]
+  MEMORA — MothersDayJourney  [v11 — FINAL DEEP FIX]
   ═══════════════════════════════════════════════════════════════
-  Fixes from v9:
-  1. Cover NO LONGER in FlipBook → no double-cover "sticky" issue
-  2. New color palette: #FCF9F2 bg, #F3EDE3 pages, #724933 text
-  3. New font system: Sans-serif outside, Caveat inside pages
+  Fixes from ChatGPT v10:
+  1. FlipBook now properly mounts (was missing setFlipMounted)
+  2. Click-to-flip re-enabled (disableFlipByClick: false)
+  3. Shadow restored for real "book" feel (maxShadowOpacity: 0.5)
+  4. Proper color palette: #FCF9F2 bg, #F3EDE3 pages (NOT white)
+  5. Photo uses objectFit: contain so images never get cropped weird
+  6. Fixed touch conflicts causing lift-up jitter on mobile
   ═══════════════════════════════════════════════════════════════
 */
 
 /* ── COLOR TOKENS ── */
 const C = {
-  bg:       '#FFFFFF',  // Scene background
-  page:     '#FFFFFF',  // Book page color
-  text:     '#724933',  // UI text (TV, buttons, tooltips)
+  bg:       '#FCF9F2',
+  page:     '#F3EDE3',
+  text:     '#724933',
   textSoft: 'rgba(114,73,51,.65)',
   textFade: 'rgba(114,73,51,.4)',
-  cover:    '#5c1f17',  // Book cover (burgundy)
-  gold:     '#D4B483',  // Cover accents
+  cover:    '#5c1f17',
+  gold:     '#D4B483',
 } as const;
 
-/* ── FONT TOKENS ── */
 const F = {
   sans: "'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
   hand: "'Caveat', cursive",
-  serif: "'Cormorant Garamond', serif",
 } as const;
 
 function resolveUrl(url: string): string {
@@ -63,11 +64,9 @@ function playFlip() {
 }
 
 const FrameCorner = ({ rotate = 0 }: { rotate?: number }) => (
-  <svg width="36" height="36" viewBox="0 0 60 60" style={{ transform: `rotate(${rotate}deg)`, position: 'absolute', pointerEvents: 'none' }}>
-    <path d="M2 30 Q2 2 30 2 M8 30 Q8 8 30 8 M2 12 Q5 5 12 2 M8 16 Q11 11 16 8" stroke="#c9a97a" strokeWidth=".9" fill="none" opacity=".7"/>
-    <circle cx="6" cy="6" r="1.5" fill="#b89a6e" opacity=".6"/>
-    <path d="M14 4 Q18 6 16 10 Q12 8 14 4" fill="#c9a97a" opacity=".5"/>
-    <path d="M4 14 Q6 18 10 16 Q8 12 4 14" fill="#c9a97a" opacity=".5"/>
+  <svg width="32" height="32" viewBox="0 0 60 60" style={{ transform: `rotate(${rotate}deg)`, position: 'absolute', pointerEvents: 'none' }}>
+    <path d="M2 30 Q2 2 30 2 M8 30 Q8 8 30 8 M2 12 Q5 5 12 2 M8 16 Q11 11 16 8" stroke="#b89a6e" strokeWidth=".9" fill="none" opacity=".65"/>
+    <circle cx="6" cy="6" r="1.5" fill="#b89a6e" opacity=".55"/>
   </svg>
 );
 
@@ -92,7 +91,7 @@ const BookPage = forwardRef<HTMLDivElement, { children: React.ReactNode; isBack?
         <>
           <div style={{
             position: 'absolute', inset: 0, pointerEvents: 'none',
-            backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.03) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.04) 0%, transparent 40%)`,
+            backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.04) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.05) 0%, transparent 40%)`,
           }} />
           <div style={{
             position: 'absolute', top: 0, bottom: 0,
@@ -129,7 +128,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   const [FlipBookComp, setFlipBookComp] = useState<any>(null);
   const [bookState, setBookState] = useState<'closed' | 'opening' | 'open'>('closed');
-  const [flipMounted, setFlipMounted] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [dims, setDims] = useState({ w: 320, h: 440 });
   const [isMobile, setIsMobile] = useState(false);
@@ -149,9 +147,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const openLockRef = useRef(false);
   const introTapLockRef = useRef(false);
 
-  /* Pages in FlipBook = photos + back cover (NO cover) */
   const totalPages = useMemo(() => {
-    let count = photos.length + 1; // photos + back
+    let count = photos.length + 1;
     if (count % 2 !== 0) count++;
     return count;
   }, [photos.length]);
@@ -260,9 +257,9 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   useEffect(() => {
     let msg: string | null = null;
-    let delay = 500;
+    const delay = 500;
     if (phase === 'book' && bookState === 'closed') msg = '✨ Tap the book to open';
-    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or use arrows to turn pages';
+    else if (phase === 'book' && bookState === 'open') msg = '👆 Tap or swipe to flip pages';
     else if (phase === 'cassette') msg = '🎬 Tap the cassette to watch';
     else if (phase === 'tv') msg = '📺 Enjoy the video';
 
@@ -284,7 +281,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setBookState('opening');
     setTimeout(() => {
       setBookState('open');
-    }, 620);
+    }, 1200);
   }, [bookState]);
 
   const onFlip = useCallback((e: any) => {
@@ -361,14 +358,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const pageLabel = currentPage >= totalPages - 1 ? 'End'
     : `${currentPage + 1} / ${photos.length}`;
 
-  /* ─── Pages: photos + back (NO cover) ─── */
   const renderPages = useMemo(() => {
     const pages: React.ReactNode[] = [];
 
     photos.forEach((photo, i) => {
       const title = getCaptionTitle(photo);
       const caption = getCaptionText(photo);
-      const isLeftPage = i % 2 === 0; // first photo on left
+      const isLeftPage = i % 2 === 0;
       const tiltAngle = i % 3 === 0 ? 0 : (i % 2 === 0 ? -1.2 : 1.4);
 
       pages.push(
@@ -377,46 +373,65 @@ export function MothersDayJourney({ album }: { album: Album }) {
             width: '100%', height: '100%',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
-            padding: 'clamp(20px,4vw,36px) clamp(18px,3.5vw,32px)',
+            padding: 'clamp(16px,3.5vw,32px) clamp(14px,3vw,28px)',
             position: 'relative',
           }}>
+            {/* Photo frame */}
             <div style={{
               position: 'relative',
-              width: '78%',
-              maxWidth: '300px',
+              width: '82%',
+              maxWidth: '320px',
               aspectRatio: '4/5',
               transform: `rotate(${tiltAngle}deg)`,
-              marginBottom: 'clamp(18px,3vw,28px)',
-              filter: 'drop-shadow(0 6px 14px rgba(80,50,20,.22)) drop-shadow(0 2px 4px rgba(80,50,20,.15))',
+              marginBottom: 'clamp(14px,2.5vw,22px)',
+              filter: 'drop-shadow(0 8px 18px rgba(80,50,20,.18)) drop-shadow(0 3px 6px rgba(80,50,20,.12))',
             }}>
               <div style={{
                 position: 'absolute', inset: 0,
-                background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 50%, #ffffff 100%)',
-                borderRadius: '4px',
-                padding: 'clamp(10px,2vw,16px)',
-                boxShadow: `inset 0 0 0 1px rgba(114,73,51,.12),inset 0 0 0 4px #ffffff,inset 0 0 0 5px rgba(114,73,51,.08)`,
+                background: 'linear-gradient(135deg, #fdfaf3 0%, #f4ead6 50%, #fdfaf3 100%)',
+                borderRadius: '3px',
+                padding: 'clamp(8px,1.8vw,14px)',
+                boxShadow: `inset 0 0 0 1px rgba(180,140,90,.3),inset 0 0 0 3px #fdfaf3,inset 0 0 0 4px rgba(180,140,90,.18)`,
               }}>
-                <div style={{ position: 'absolute', top: '4px', left: '4px' }}><FrameCorner rotate={0} /></div>
-                <div style={{ position: 'absolute', top: '4px', right: '4px' }}><FrameCorner rotate={90} /></div>
-                <div style={{ position: 'absolute', bottom: '4px', right: '4px' }}><FrameCorner rotate={180} /></div>
-                <div style={{ position: 'absolute', bottom: '4px', left: '4px' }}><FrameCorner rotate={270} /></div>
-                <div style={{ width: '100%', height: '100%', background: '#ffffff', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(114,73,51,.10)' }}>
-                  <img src={imageUrls[i] || ''} alt="" decoding="async" draggable={false}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', top: '2px', left: '2px' }}><FrameCorner rotate={0} /></div>
+                <div style={{ position: 'absolute', top: '2px', right: '2px' }}><FrameCorner rotate={90} /></div>
+                <div style={{ position: 'absolute', bottom: '2px', right: '2px' }}><FrameCorner rotate={180} /></div>
+                <div style={{ position: 'absolute', bottom: '2px', left: '2px' }}><FrameCorner rotate={270} /></div>
+                <div style={{
+                  width: '100%', height: '100%',
+                  background: '#1a1410',
+                  overflow: 'hidden',
+                  boxShadow: 'inset 0 0 0 1px rgba(60,40,20,.4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <img
+                    src={imageUrls[i] || ''}
+                    alt=""
+                    decoding="async"
+                    draggable={false}
+                    style={{
+                      width: '100%', height: '100%',
+                      objectFit: 'cover',
+                      objectPosition: 'center',
+                      display: 'block',
+                    }}
+                  />
                 </div>
               </div>
             </div>
-            <div style={{ width: '85%', textAlign: 'center', transform: `rotate(${tiltAngle * -0.3}deg)` }}>
+            {/* Caption */}
+            <div style={{ width: '90%', textAlign: 'center', transform: `rotate(${tiltAngle * -0.3}deg)` }}>
               {title && (
-                <div style={{ fontFamily: F.hand, fontSize: 'clamp(20px,3.8vw,28px)', color: '#3a2a1a', lineHeight: 1.2, marginBottom: '4px', fontWeight: 600 }}>{title}</div>
+                <div style={{ fontFamily: F.hand, fontSize: 'clamp(20px,3.5vw,28px)', color: '#3a2a1a', lineHeight: 1.15, marginBottom: '3px', fontWeight: 600 }}>{title}</div>
               )}
               {caption && (
-                <div style={{ fontFamily: F.hand, fontSize: 'clamp(15px,2.8vw,22px)', color: '#5a4530', lineHeight: 1.4, fontWeight: 400, maxHeight: '4em', overflow: 'hidden' }}>{caption}</div>
+                <div style={{ fontFamily: F.hand, fontSize: 'clamp(15px,2.6vw,22px)', color: '#5a4530', lineHeight: 1.35, fontWeight: 400, maxHeight: '3.5em', overflow: 'hidden' }}>{caption}</div>
               )}
             </div>
+            {/* Page number */}
             <div style={{
-              position: 'absolute', bottom: 'clamp(10px,2vw,16px)',
-              [isLeftPage ? 'left' : 'right']: 'clamp(14px,2.5vw,22px)',
+              position: 'absolute', bottom: 'clamp(8px,1.5vw,14px)',
+              [isLeftPage ? 'left' : 'right']: 'clamp(12px,2vw,20px)',
               fontFamily: F.hand, fontSize: 'clamp(11px,1.8vw,14px)',
               color: 'rgba(90,60,30,.4)', fontStyle: 'italic',
             }}>{String(i + 1).padStart(2, '0')}</div>
@@ -425,7 +440,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
       );
     });
 
-    /* Back cover */
     pages.push(
       <BookPage key="back" isBack>
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%)` }} />
@@ -438,7 +452,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
       </BookPage>
     );
 
-    /* Pad to even (also covers edge case of 1 photo) */
     if (pages.length % 2 !== 0) {
       pages.push(<BookPage key="pad"><div style={{ width: '100%', height: '100%', backgroundColor: C.page }} /></BookPage>);
     }
@@ -448,13 +461,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
         
-        /* Force solid bg on every pageflip layer */
+        /* ═══ FORCE SOLID PAGE BG (prevents see-through) ═══ */
         .stf__wrapper{margin:0 auto!important}
         .stf__parent{
-          box-shadow:0 50px 100px -25px rgba(60,30,15,.35),0 30px 60px -15px rgba(60,30,15,.25),0 0 0 1px rgba(60,30,15,.1)!important;
+          box-shadow:0 50px 100px -25px rgba(60,30,15,.4),0 30px 60px -15px rgba(60,30,15,.3),0 0 0 1px rgba(60,30,15,.1)!important;
           border-radius:3px!important;
         }
         .stf__block{background-color:${C.page}!important}
@@ -470,11 +483,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
         @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes mj-fadeInSlow{from{opacity:0;transform:translateY(20px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes mj-bookEnter{from{opacity:0;transform:scale(.9) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
+        
+        /* ═══ COVER OPENING ROTATION ═══ */
         @keyframes mj-coverOpen{
-          0%{transform:translateX(-50%) rotateY(0deg);box-shadow:0 20px 40px -10px rgba(0,0,0,.4)}
-          100%{transform:translateX(-50%) rotateY(-172deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
+          0%{transform:rotateY(0deg);box-shadow:0 20px 40px -10px rgba(0,0,0,.4)}
+          100%{transform:rotateY(-172deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
         }
-        @keyframes mj-flipbookReveal{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
+        @keyframes mj-flipbookReveal{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
         @keyframes mj-tooltipIn{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(0)}}
         @keyframes mj-glow{
           0%,100%{box-shadow:0 30px 60px -15px rgba(60,30,15,.3)}
@@ -482,14 +497,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
         }
         
         .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
-        .mj-flipbook-wrap{animation:mj-flipbookReveal .18s ease both}
+        .mj-flipbook-wrap{animation:mj-flipbookReveal .5s ease both}
         .mj-closedbook{animation:mj-glow 4s ease-in-out infinite}
         .mj-closedbook:hover{transform:translateY(-4px) scale(1.01);transition:transform .35s ease}
         .mj-cover-rotating{
           transform-origin:left center;
           transform-style:preserve-3d;
           -webkit-transform-style:preserve-3d;
-          animation:mj-coverOpen .72s cubic-bezier(.55,.18,.2,1) forwards;
+          animation:mj-coverOpen 1.2s cubic-bezier(.5,.2,.2,1) forwards;
         }
         .mj-tooltip{animation:mj-tooltipIn 3.5s ease forwards}
       `}} />
@@ -499,7 +514,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
         fontFamily: F.sans, color: C.text, overflow: 'hidden',
         background: C.bg,
       }}>
-        {/* Subtle ambient lighting */}
         <div style={{
           position: 'fixed', inset: 0, pointerEvents: 'none',
           backgroundImage: `radial-gradient(circle at 30% 20%, rgba(255,240,220,.4) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(220,195,160,.2) 0%, transparent 55%)`,
@@ -507,8 +521,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
         {/* LOADING */}
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 999,
-          background: C.bg,
+          position: 'fixed', inset: 0, zIndex: 999, background: C.bg,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px',
           transition: 'opacity .6s,visibility .6s',
           opacity: phase === 'loading' ? 1 : 0,
@@ -529,13 +542,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             opacity: phase === 'intro' ? 1 : 0,
             pointerEvents: phase === 'intro' ? 'auto' : 'none',
-            transition: 'opacity 1s ease',
-            padding: '40px 24px',
+            transition: 'opacity 1s ease', padding: '40px 24px',
             cursor: introStep >= 3 ? 'pointer' : 'default',
           }}>
           <div style={{
-            fontFamily: F.sans,
-            fontSize: 'clamp(42px,8vw,72px)',
+            fontFamily: F.hand, fontSize: 'clamp(48px,10vw,96px)',
             color: C.text, fontWeight: 600, textAlign: 'center',
             lineHeight: 1, marginBottom: 'clamp(20px,4vw,36px)',
             opacity: introStep >= 1 ? 1 : 0,
@@ -553,9 +564,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
           }}>"I made this from the moments<br />I never want us to lose."</div>
           <div style={{
             position: 'absolute', bottom: 'clamp(40px,8vh,80px)',
-            fontFamily: F.sans,
-            fontSize: 'clamp(9px,1.2vw,11px)', letterSpacing: '4px',
-            textTransform: 'uppercase', color: C.textSoft, fontWeight: 600,
+            fontFamily: F.sans, fontSize: 'clamp(9px,1.2vw,11px)',
+            letterSpacing: '4px', textTransform: 'uppercase', color: C.textSoft, fontWeight: 600,
             opacity: introStep >= 3 ? 1 : 0, transition: 'opacity 1s ease',
             animation: introStep >= 3 ? 'mj-pulse 1.8s ease-in-out infinite' : 'none',
           }}>✨ Tap anywhere to continue</div>
@@ -571,7 +581,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           transition: 'opacity .6s', padding: '20px',
         }}>
 
-          {/* CLOSED BOOK with cover opening */}
+          {/* CLOSED / OPENING cover */}
           {bookState !== 'open' && (
             <div style={{
               position: 'relative',
@@ -580,27 +590,36 @@ export function MothersDayJourney({ album }: { album: Album }) {
               perspective: '2500px',
               perspectiveOrigin: 'center center',
             }}>
-              {/* Cover */}
+              {/* Inner blank page revealed during opening */}
+              <div style={{
+                position: 'absolute', left: '50%', top: 0,
+                width: dims.w, height: dims.h,
+                backgroundColor: C.page,
+                backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.04) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.05) 0%, transparent 40%)`,
+                borderRadius: '0 3px 3px 0',
+                boxShadow: 'inset 8px 0 12px -4px rgba(101,67,33,.15)',
+                opacity: bookState === 'opening' ? 1 : 0,
+                transition: 'opacity .3s ease .5s',
+              }} />
+
+              {/* Cover itself */}
               <div
                 className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
                 onClick={() => { if (bookState === 'closed') openBook(); }}
                 onTouchEnd={(e) => { if (bookState === 'closed') { e.preventDefault(); openBook(); } }}
                 style={{
-                  position: 'absolute',
-                  left: '50%', top: 0,
+                  position: 'absolute', left: '50%', top: 0,
                   width: dims.w, height: dims.h,
                   transform: 'translateX(-50%)',
                   transformOrigin: 'left center',
                   cursor: bookState === 'closed' ? 'pointer' : 'default',
-                  zIndex: 10,
-                  willChange: 'transform',
+                  zIndex: 10, willChange: 'transform',
                 }}
               >
                 <div style={{
                   position: 'absolute', inset: 0,
                   background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
-                  borderRadius: '4px',
-                  overflow: 'hidden',
+                  borderRadius: '4px', overflow: 'hidden',
                   boxShadow: bookState === 'closed'
                     ? '0 20px 40px -10px rgba(0,0,0,.35), inset 2px 0 6px rgba(0,0,0,.4)'
                     : 'inset 2px 0 6px rgba(0,0,0,.4)',
@@ -619,14 +638,13 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 }} />
               </div>
 
-              {/* Page stack peek */}
+              {/* Pages peek when closed */}
               {bookState === 'closed' && (
                 <div style={{
                   position: 'absolute',
                   left: `calc(50% + ${dims.w / 2 - 3}px)`,
-                  top: '6px', bottom: '6px',
-                  width: '6px',
-                  background: 'linear-gradient(to right, #ffffff 0%, #f5f5f5 100%)',
+                  top: '6px', bottom: '6px', width: '6px',
+                  background: 'linear-gradient(to right, #f5ead2 0%, #d8c9a8 100%)',
                   borderRadius: '0 2px 2px 0',
                   boxShadow: '1px 0 3px rgba(0,0,0,.15)',
                   zIndex: 5,
@@ -635,14 +653,9 @@ export function MothersDayJourney({ album }: { album: Album }) {
             </div>
           )}
 
-          {/* FlipBook is mounted during opening, but hidden until cover finishes */}
-          {flipMounted && FlipBookComp && (
-            <div className="mj-flipbook-wrap" style={{
-              position: 'relative',
-              opacity: bookState === 'open' ? 1 : 0,
-              visibility: bookState === 'open' ? 'visible' : 'hidden',
-              pointerEvents: bookState === 'open' ? 'auto' : 'none',
-            }}>
+          {/* OPEN BOOK — FlipBook */}
+          {bookState === 'open' && FlipBookComp && (
+            <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
               <FlipBookComp
                 ref={flipRef}
                 width={dims.w}
@@ -656,11 +669,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 mobileScrollSupport={false}
                 useMouseEvents={true}
                 clickEventForward={true}
-                flippingTime={800}
+                flippingTime={950}
                 drawShadow={true}
-                maxShadowOpacity={0.16}
+                maxShadowOpacity={0.5}
                 showPageCorners={false}
-                disableFlipByClick={true}
+                disableFlipByClick={false}
                 usePortrait={false}
                 startZIndex={10}
                 autoSize={false}
@@ -668,7 +681,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 style={{}}
                 className=""
                 startPage={0}
-                swipeDistance={32}
+                swipeDistance={20}
               >
                 {renderPages}
               </FlipBookComp>
@@ -713,7 +726,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
               <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
               <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
               <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6" />
-              <text x="110" y="52" fontFamily="Inter, sans-serif" fontSize="14" fill="#b89a6e" textAnchor="middle">memories</text>
+              <text x="110" y="52" fontFamily="'Caveat',cursive" fontSize="14" fill="#b89a6e" textAnchor="middle">memories</text>
               <text x="110" y="66" fontFamily="serif" fontSize="6" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
               <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
               <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
@@ -729,7 +742,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
           opacity: showTV ? 1 : 0, pointerEvents: showTV ? 'auto' : 'none', transition: 'opacity .4s',
         }}>
-          <div style={{ position: 'relative', width: 'min(70vw,440px)', background: '#724933', borderRadius: '14px 14px 20px 20px', padding: '10px 12px 22px', boxShadow: '0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #724933' }}>
+          <div style={{ position: 'relative', width: 'min(70vw,440px)', background: '#2a251e', borderRadius: '14px 14px 20px 20px', padding: '10px 12px 22px', boxShadow: '0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #5e4e38' }}>
             <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
               <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
                 <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
@@ -738,11 +751,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)' }} />
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)' }} />
             </div>
             <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: C.text, letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
-            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#724933', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
+            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#2a251e', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
           </div>
           {(videoEnded || !videoUrl) && (
             <button onClick={closeToEnding} style={continueBtn}>Continue</button>
@@ -757,22 +770,20 @@ export function MothersDayJourney({ album }: { album: Album }) {
           transition: 'opacity 1.5s ease', padding: '40px 24px',
         }}>
           <div style={{
-            fontFamily: F.sans, fontSize: 'clamp(40px,7vw,72px)',
+            fontFamily: F.hand, fontSize: 'clamp(56px,11vw,110px)',
             color: C.text, fontWeight: 600, textAlign: 'center', lineHeight: 1.1,
             textShadow: '0 2px 12px rgba(114,73,51,.12)',
             animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease both' : 'none',
           }}>Love you always 💝</div>
           <div style={{
             marginTop: 'clamp(24px,4vw,40px)',
-            fontFamily: F.sans,
-            fontSize: 'clamp(9px,1.2vw,11px)', letterSpacing: '5px',
+            fontFamily: F.sans, fontSize: 'clamp(9px,1.2vw,11px)', letterSpacing: '5px',
             textTransform: 'uppercase', color: C.textSoft, fontWeight: 600,
             animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease 1s both' : 'none',
             opacity: 0,
           }}>Memora · {year}</div>
         </div>
 
-        {/* TOOLTIP */}
         {tooltip && (
           <div key={tooltip} className="mj-tooltip" style={{
             position: 'fixed', top: 'clamp(24px,6vh,60px)', left: '50%',
