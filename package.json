@@ -29,6 +29,7 @@
     "three": "^0.183.2",
     "zod": "^4.3.6",
     "zustand": "^5.0.12"
+    "react-pageflip": "^2.0.3",
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
