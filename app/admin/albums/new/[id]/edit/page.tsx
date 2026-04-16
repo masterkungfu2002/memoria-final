@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { AlbumEditForm } from '@/components/admin/AlbumEditForm';
 import { redirect } from 'next/navigation';
  
@@ -6,7 +6,7 @@ export default async function EditAlbumPage(
   props: { params: Promise<{ id: string }> }
 ) {
   const { id } = await props.params;
-  const supabase = await createClient();
+  const supabase = await createSupabaseServerClient();
  
   const { data: album, error } = await supabase
     .from('albums')
