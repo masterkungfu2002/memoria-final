@@ -4,13 +4,13 @@ import type { Album } from '@/lib/types';
  
 /*
   ═══════════════════════════════════════════════════════════════
-  MEMORA — MothersDayJourney  [v4 — react-pageflip engine]
+  MEMORA — MothersDayJourney  [v5 — caption overlay, FB-style]
   ═══════════════════════════════════════════════════════════════
-  Replaces self-built leaf-based 3D engine (v1-v3) with
-  react-pageflip canvas-based flip. Works on ALL devices.
-  
-  Book: centered, ~70% viewport, FlippingBook-style.
-  Cassette / TV / Feedback: UNCHANGED from v3.
+  Fix v4 issues:
+   - Caption now OVERLAYS on the photo page (no separate page)
+   - Page corners curl on hover (showPageCorners=true)
+   - Better 2-page spread on desktop, single on mobile but with peek
+   - Photos are now PROPERLY paired (left=photo N, right=photo N+1)
   ═══════════════════════════════════════════════════════════════
 */
  
@@ -23,7 +23,7 @@ function isYT(u: string) { return /youtu\.?be/.test(u); }
 function ytId(u: string) { return u.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/)?.[1] || ''; }
  
 function getCaptionText(photo: any): string {
-  return photo?.caption || photo?.description || photo?.text || photo?.message || photo?.content || 'A cherished memory';
+  return photo?.caption || photo?.description || photo?.text || photo?.message || photo?.content || '';
 }
 function getCaptionTitle(photo: any): string {
   return photo?.title || photo?.name || photo?.heading || '';
@@ -45,10 +45,15 @@ function playFlip() {
   } catch {}
 }
  
-/* ── Page wrapper (react-pageflip requires forwardRef) ────── */
-const BookPage = forwardRef<HTMLDivElement, { children: React.ReactNode; bg?: string }>(
-  ({ children, bg }, ref) => (
-    <div ref={ref} style={{ width: '100%', height: '100%', background: bg || '#F5EFE7', overflow: 'hidden', position: 'relative' }}>
+/* ── Page wrapper for react-pageflip ─────────────────────── */
+const BookPage = forwardRef<HTMLDivElement, { children: React.ReactNode; bg?: string; className?: string }>(
+  ({ children, bg, className }, ref) => (
+    <div ref={ref} className={`mj-page ${className || ''}`} style={{
+      width: '100%', height: '100%',
+      background: bg || '#F5EFE7',
+      overflow: 'hidden',
+      position: 'relative',
+    }}>
       {children}
     </div>
   )
@@ -70,7 +75,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const [FlipBookComp, setFlipBookComp] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [bookDone, setBookDone] = useState(false);
-  const [dims, setDims] = useState({ w: 300, h: 420 });
+  const [dims, setDims] = useState({ w: 320, h: 440 });
+  const [isMobile, setIsMobile] = useState(false);
  
   const [showTV, setShowTV] = useState(false);
   const [tvStatic, setTvStatic] = useState(true);
@@ -87,36 +93,42 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
  
-  /* Total pages: cover + (photo+caption per photo) + back cover, padded to even */
+  /* Total: cover + N photo pages + back cover, even-padded */
   const totalPages = useMemo(() => {
-    let count = 1 + photos.length * 2 + 1; // cover + pages + back
+    let count = 1 + photos.length + 1;
     if (count % 2 !== 0) count++;
     return count;
   }, [photos.length]);
  
-  /* ── Dynamic import react-pageflip (avoid SSR) ── */
+  /* ── Load library ── */
   useEffect(() => {
     import('react-pageflip').then(mod => {
       setFlipBookComp(() => mod.default);
     }).catch(() => {});
   }, []);
  
-  /* ── Responsive book sizing ── */
+  /* ── Responsive sizing ── */
   useEffect(() => {
     const update = () => {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const isMobile = vw < 768;
+      const mobile = vw < 768;
+      setIsMobile(mobile);
  
       let pw: number, ph: number;
-      if (isMobile) {
-        pw = Math.min(vw * 0.42, 200);
-        ph = pw * 1.4;
-        if (ph > vh * 0.55) { ph = vh * 0.55; pw = ph / 1.4; }
-      } else {
-        pw = Math.min(vw * 0.25, 320);
+      if (mobile) {
+        // Mobile: single page, fits nicely centered with margin
+        pw = Math.min(vw * 0.78, 360);
         ph = pw * 1.35;
-        if (ph > vh * 0.65) { ph = vh * 0.65; pw = ph / 1.35; }
+        const maxH = vh * 0.7;
+        if (ph > maxH) { ph = maxH; pw = ph / 1.35; }
+      } else {
+        // Desktop: book opens to 2 pages → each page width is half book width
+        const maxBookW = Math.min(vw * 0.7, 900);
+        const maxBookH = vh * 0.78;
+        pw = maxBookW / 2;
+        ph = pw * 1.4;
+        if (ph > maxBookH) { ph = maxBookH; pw = ph / 1.4; }
       }
       setDims({ w: Math.round(pw), h: Math.round(ph) });
     };
@@ -166,20 +178,19 @@ export function MothersDayJourney({ album }: { album: Album }) {
     return () => { a.pause(); a.src = ''; document.removeEventListener('click', p); document.removeEventListener('touchstart', p); };
   }, [album]);
  
-  /* ── Flip handler ── */
+  /* ── Flip event ── */
   const onFlip = useCallback((e: any) => {
     playFlip();
     const page = e.data;
     setCurrentPage(page);
     if (page >= totalPages - 2 && !bookDone) {
       setBookDone(true);
-      setTimeout(() => setPhase(videoUrl ? 'cassette' : 'feedback'), 1800);
+      setTimeout(() => setPhase(videoUrl ? 'cassette' : 'feedback'), 1500);
     }
   }, [totalPages, videoUrl, bookDone]);
  
-  /* ── Nav ── */
-  const flipPrev = () => { if (flipRef.current) flipRef.current.pageFlip().flipPrev(); };
-  const flipNext = () => { if (flipRef.current) flipRef.current.pageFlip().flipNext(); };
+  const flipPrev = () => { try { flipRef.current?.pageFlip()?.flipPrev(); } catch {} };
+  const flipNext = () => { try { flipRef.current?.pageFlip()?.flipNext(); } catch {} };
  
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -216,7 +227,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setPhase('feedback');
   };
  
-  /* ── Feedback (UNCHANGED) ── */
   const submitFb = async () => {
     if (!rating) { alert('Please select a rating'); return; }
     setFbLoading(true);
@@ -230,128 +240,134 @@ export function MothersDayJourney({ album }: { album: Album }) {
  
   const pageLabel = currentPage <= 0 ? 'Cover'
     : currentPage >= totalPages - 1 ? 'End'
-    : `${Math.ceil(currentPage / 2)} / ${photos.length}`;
+    : `${currentPage} / ${photos.length}`;
  
-  /* ── Build pages ── */
+  /* ══════════════════════════════════════════════════════════ */
+  /* PAGES                                                       */
+  /* ══════════════════════════════════════════════════════════ */
   const renderPages = useMemo(() => {
     const pages: React.ReactNode[] = [];
  
-    /* Cover */
+    /* COVER */
     pages.push(
-      <BookPage key="cover" bg="#0B0B0B">
+      <BookPage key="cover" bg="linear-gradient(135deg,#0B0B0B 0%,#1a1410 100%)">
         <div style={{
           width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          padding: 'clamp(16px,5vw,40px)', textAlign: 'center', position: 'relative',
+          padding: 'clamp(20px,5vw,40px)', textAlign: 'center', position: 'relative',
         }}>
-          <div style={{ position: 'absolute', inset: '10px', border: '1px solid rgba(158,126,86,.3)', pointerEvents: 'none' }} />
-          <div style={{ position: 'absolute', inset: '14px', border: '1px solid rgba(158,126,86,.12)', pointerEvents: 'none' }} />
-          <div style={{ fontSize: 'clamp(8px,1.6vw,11px)', color: '#C6A97E', letterSpacing: '6px', marginBottom: 'clamp(10px,2vw,18px)', opacity: .6 }}>
+          <div style={{ position: 'absolute', inset: '12px', border: '1px solid rgba(198,169,126,.35)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', inset: '17px', border: '1px solid rgba(198,169,126,.12)', pointerEvents: 'none' }} />
+ 
+          <div style={{ fontSize: 'clamp(8px,1.5vw,11px)', color: '#C6A97E', letterSpacing: '6px', marginBottom: 'clamp(12px,2.5vw,20px)', opacity: .7 }}>
             &#10022; &nbsp; &#10022; &nbsp; &#10022;
           </div>
-          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 'clamp(15px,3.2vw,24px)', fontWeight: 400, color: '#F5EFE7', lineHeight: 1.45, marginBottom: '6px' }}>
-            For the Most Wonderful<br /><span style={{ color: '#C6A97E', fontStyle: 'italic' }}>{recipient}</span>
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 'clamp(16px,3.4vw,26px)', fontWeight: 400, color: '#F5EFE7', lineHeight: 1.5, marginBottom: '8px' }}>
+            For the Most Wonderful
           </div>
-          <div style={{ width: '28px', height: '1px', background: '#C6A97E', opacity: .5, margin: 'clamp(10px,2vw,16px) auto' }} />
-          <div style={{ fontSize: 'clamp(7px,1.3vw,9px)', fontWeight: 300, color: '#D4BA94', letterSpacing: '4px', textTransform: 'uppercase' }}>
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 'clamp(20px,4.5vw,34px)', color: '#C6A97E', fontStyle: 'italic', marginBottom: '4px', lineHeight: 1.2 }}>
+            {recipient}
+          </div>
+          <div style={{ width: '36px', height: '1px', background: '#C6A97E', opacity: .5, margin: 'clamp(14px,2.5vw,20px) auto' }} />
+          <div style={{ fontSize: 'clamp(7px,1.3vw,9px)', fontWeight: 300, color: '#D4BA94', letterSpacing: '5px', textTransform: 'uppercase' }}>
             Album of Memories
           </div>
-          <div style={{ fontSize: 'clamp(7px,1.2vw,9px)', color: '#9E7E56', letterSpacing: '3px', fontStyle: 'italic', opacity: .7, marginTop: 'clamp(10px,2vw,16px)' }}>
+          <div style={{ fontSize: 'clamp(7px,1.2vw,9px)', color: '#9E7E56', letterSpacing: '3px', fontStyle: 'italic', opacity: .7, marginTop: 'clamp(12px,2.5vw,18px)' }}>
             Memoraa &middot; {year}
           </div>
         </div>
       </BookPage>
     );
  
-    /* Photo + Caption pairs */
+    /* PHOTO PAGES — caption overlays at bottom */
     photos.forEach((photo, i) => {
-      /* Photo page */
+      const title = getCaptionTitle(photo);
+      const caption = getCaptionText(photo);
+      const hasText = !!(title || caption);
+ 
       pages.push(
-        <BookPage key={`photo-${i}`} bg="#111">
-          <div style={{ width: '100%', height: '100%', position: 'relative', background: '#111' }}>
+        <BookPage key={`photo-${i}`} bg="#0e0e0e">
+          {/* Photo */}
+          <div style={{ position: 'absolute', inset: 0, background: '#0e0e0e' }}>
             <img
               src={imageUrls[i] || ''}
               alt=""
               decoding="async"
               draggable={false}
-              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             />
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '20%', pointerEvents: 'none', background: 'linear-gradient(to top,rgba(0,0,0,.25),transparent)' }} />
-            <div style={{ position: 'absolute', bottom: 'clamp(6px,1.2vw,12px)', right: 'clamp(8px,1.5vw,14px)', fontSize: 'clamp(7px,1.2vw,9px)', color: 'rgba(255,255,255,.35)', letterSpacing: '3px' }}>
-              {String(i + 1).padStart(2, '0')}
-            </div>
           </div>
-        </BookPage>
-      );
  
-      /* Caption page */
-      pages.push(
-        <BookPage key={`caption-${i}`} bg="#F5EFE7">
+          {/* Caption overlay - bottom */}
+          {hasText && (
+            <div style={{
+              position: 'absolute', left: 0, right: 0, bottom: 0,
+              padding: 'clamp(20px,4vw,32px) clamp(14px,3vw,24px) clamp(14px,3vw,22px)',
+              background: 'linear-gradient(to top, rgba(0,0,0,.85) 0%, rgba(0,0,0,.7) 50%, rgba(0,0,0,0) 100%)',
+              color: '#F5EFE7',
+              fontFamily: "'Cormorant Garamond','Georgia',serif",
+            }}>
+              {title && (
+                <div style={{
+                  fontFamily: "'Playfair Display',serif",
+                  fontSize: 'clamp(13px,2.4vw,17px)', fontWeight: 600,
+                  color: '#F5EFE7', lineHeight: 1.4, marginBottom: '5px',
+                  textShadow: '0 1px 3px rgba(0,0,0,.5)',
+                }}>
+                  {title}
+                </div>
+              )}
+              {caption && (
+                <div style={{
+                  fontSize: 'clamp(10px,1.9vw,13px)',
+                  fontStyle: 'italic', fontWeight: 400,
+                  color: 'rgba(245,239,231,.95)', lineHeight: 1.7,
+                  textShadow: '0 1px 2px rgba(0,0,0,.4)',
+                  maxHeight: '6.8em', overflow: 'hidden',
+                }}>
+                  {caption}
+                </div>
+              )}
+            </div>
+          )}
+ 
+          {/* Page number - top right */}
           <div style={{
-            width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
-            justifyContent: 'center',
-            padding: 'clamp(18px,4.5vw,40px) clamp(16px,3.5vw,32px)',
-            position: 'relative', fontFamily: "'Cormorant Garamond','Georgia',serif",
+            position: 'absolute', top: 'clamp(8px,1.5vw,14px)', right: 'clamp(10px,2vw,16px)',
+            fontSize: 'clamp(8px,1.4vw,10px)', color: 'rgba(255,255,255,.55)',
+            letterSpacing: '3px', fontFamily: "'Playfair Display',serif",
+            background: 'rgba(0,0,0,.3)', padding: '3px 8px', borderRadius: '2px',
+            backdropFilter: 'blur(4px)',
           }}>
-            <div style={{
-              position: 'absolute', left: 'clamp(12px,2.5vw,20px)', top: 'clamp(12px,2.5vw,20px)',
-              bottom: 'clamp(12px,2.5vw,20px)', width: '1px',
-              background: 'linear-gradient(to bottom,transparent,#C6A97E,transparent)', opacity: .35,
-            }} />
-            <div style={{
-              fontFamily: "'Playfair Display',serif",
-              fontSize: 'clamp(28px,7vw,50px)', fontWeight: 400,
-              color: '#C6A97E', opacity: .1, lineHeight: 1, marginBottom: '-4px',
-            }}>
-              {String(i + 1).padStart(2, '0')}
-            </div>
-            {getCaptionTitle(photos[i]) && (
-              <div style={{
-                fontFamily: "'Playfair Display',serif",
-                fontSize: 'clamp(12px,2.2vw,16px)', fontWeight: 600,
-                color: '#0B0B0B', lineHeight: 1.5,
-                marginBottom: 'clamp(6px,1.5vw,12px)',
-              }}>
-                {getCaptionTitle(photos[i])}
-              </div>
-            )}
-            <div style={{ width: '28px', height: '1px', background: '#C6A97E', opacity: .45, marginBottom: 'clamp(6px,1.5vw,12px)' }} />
-            <div style={{
-              fontSize: 'clamp(10px,1.9vw,13px)',
-              fontStyle: 'italic', fontWeight: 400,
-              color: '#4a3f30', lineHeight: 1.85,
-              overflowY: 'auto', maxHeight: '55%',
-            }}>
-              {getCaptionText(photos[i])}
-            </div>
-            <div style={{ width: '28px', height: '1px', background: '#C6A97E', opacity: .45, margin: 'clamp(6px,1.5vw,10px) 0' }} />
-            <div style={{ fontSize: 'clamp(6px,1.1vw,8px)', letterSpacing: '3px', textTransform: 'uppercase', color: '#9E7E56', opacity: .6 }}>
-              {year}
-            </div>
+            {String(i + 1).padStart(2, '0')} / {String(photos.length).padStart(2, '0')}
           </div>
         </BookPage>
       );
     });
  
-    /* Back cover */
+    /* BACK COVER */
     pages.push(
-      <BookPage key="back" bg="#0B0B0B">
-        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <div style={{ fontSize: 'clamp(8px,1.4vw,10px)', color: '#C6A97E', letterSpacing: '6px', textTransform: 'uppercase', opacity: .4 }}>
+      <BookPage key="back" bg="linear-gradient(135deg,#0B0B0B 0%,#1a1410 100%)">
+        <div style={{
+          width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '14px', position: 'relative',
+        }}>
+          <div style={{ position: 'absolute', inset: '12px', border: '1px solid rgba(198,169,126,.25)' }} />
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 'clamp(11px,2vw,14px)', color: '#C6A97E', letterSpacing: '8px', textTransform: 'uppercase', opacity: .6 }}>
             Memoraa
           </div>
-          <div style={{ width: '24px', height: '1px', background: '#C6A97E', opacity: .2 }} />
-          <div style={{ fontSize: 'clamp(7px,1.1vw,8px)', color: '#9E7E56', letterSpacing: '2px', opacity: .3, fontStyle: 'italic' }}>
-            Made with love
+          <div style={{ width: '32px', height: '1px', background: '#C6A97E', opacity: .35 }} />
+          <div style={{ fontSize: 'clamp(8px,1.3vw,10px)', color: '#9E7E56', letterSpacing: '3px', opacity: .5, fontStyle: 'italic' }}>
+            Made with love &middot; {year}
           </div>
         </div>
       </BookPage>
     );
  
-    /* Pad to even if needed */
+    /* Pad to even */
     if (pages.length % 2 !== 0) {
       pages.push(
-        <BookPage key="pad" bg="#F5EFE7">
+        <BookPage key="pad" bg="#0B0B0B">
           <div style={{ width: '100%', height: '100%' }} />
         </BookPage>
       );
@@ -360,40 +376,61 @@ export function MothersDayJourney({ album }: { album: Album }) {
     return pages;
   }, [photos, imageUrls, recipient, year]);
  
-  /* ════════════════════════════════════════════════════════════ */
+  /* ══════════════════════════════════════════════════════════ */
   /* RENDER                                                      */
-  /* ════════════════════════════════════════════════════════════ */
+  /* ══════════════════════════════════════════════════════════ */
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-        .stf__wrapper{margin:0 auto!important}
-        .stf__parent{box-shadow:0 18px 50px -8px rgba(0,0,0,.35),0 8px 20px -4px rgba(0,0,0,.2)!important;border-radius:4px!important}
+        .stf__wrapper{margin:0 auto!important;background:transparent!important}
+        .stf__parent{
+          box-shadow:
+            0 30px 60px -12px rgba(0,0,0,.5),
+            0 18px 36px -8px rgba(0,0,0,.35),
+            0 0 0 1px rgba(0,0,0,.1)!important;
+          border-radius:2px!important;
+          background:transparent!important;
+        }
+        .stf__block{background:transparent!important}
+        .mj-page{user-select:none;-webkit-user-select:none}
+        .mj-page img{-webkit-user-drag:none}
         @keyframes mj-spin{to{transform:rotate(360deg)}}
-        @keyframes mj-hint{0%,100%{opacity:.2}50%{opacity:.7}}
+        @keyframes mj-hint{0%,100%{opacity:.25;transform:translateX(-50%) translateY(0)}50%{opacity:.7;transform:translateX(-50%) translateY(-2px)}}
         @keyframes mj-eject{0%{transform:translateY(0) scale(1);opacity:1}30%{transform:translateY(-12px) scale(1.03)}100%{transform:translateY(40px) scale(.5);opacity:0}}
         @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes mj-bookEnter{from{opacity:0;transform:scale(.92) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+        .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
       `}} />
  
       <div style={{
-        position: 'fixed', inset: 0, userSelect: 'none', WebkitUserSelect: 'none',
+        position: 'fixed', inset: 0,
         fontFamily: "'Cormorant Garamond',serif", color: '#2e2a24', overflow: 'hidden',
-        background: 'radial-gradient(ellipse 90% 70% at 50% 55%,#F5EFE7,#E8DDD0)',
+        background: `
+          radial-gradient(ellipse 100% 80% at 50% 50%, #2a1f15 0%, #14100c 60%, #0a0806 100%)
+        `,
       }}>
+ 
+        {/* Ambient texture overlay */}
+        <div style={{
+          position: 'fixed', inset: 0, pointerEvents: 'none',
+          backgroundImage: 'radial-gradient(circle at 20% 30%, rgba(198,169,126,.04) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(198,169,126,.03) 0%, transparent 50%)',
+          mixBlendMode: 'screen',
+        }} />
  
         {/* ── Loading ── */}
         <div style={{
-          position: 'fixed', inset: 0, zIndex: 999, background: '#F0E8DA',
+          position: 'fixed', inset: 0, zIndex: 999, background: '#0B0B0B',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '14px',
           transition: 'opacity .6s,visibility .6s',
           opacity: loaded && FlipBookComp ? 0 : 1,
           visibility: loaded && FlipBookComp ? 'hidden' : 'visible',
           pointerEvents: loaded && FlipBookComp ? 'none' : 'auto',
         }}>
-          <div style={{ width: '40px', height: '40px', border: '1.5px solid rgba(139,115,85,.15)', borderTopColor: '#8B7355', borderRadius: '50%', animation: 'mj-spin .9s linear infinite' }} />
-          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: '1.5rem', color: '#8B7355', fontWeight: 300, letterSpacing: '.1em' }}>{loadPct}%</div>
-          <div style={{ fontSize: '.55rem', letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(139,115,85,.4)' }}>Preparing your memories</div>
+          <div style={{ width: '40px', height: '40px', border: '1.5px solid rgba(198,169,126,.15)', borderTopColor: '#C6A97E', borderRadius: '50%', animation: 'mj-spin .9s linear infinite' }} />
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: '1.5rem', color: '#C6A97E', fontWeight: 300, letterSpacing: '.1em' }}>{loadPct}%</div>
+          <div style={{ fontSize: '.55rem', letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(198,169,126,.4)' }}>Preparing your memories</div>
         </div>
  
         {/* ══════════════════════════════════════════════════════ */}
@@ -401,66 +438,105 @@ export function MothersDayJourney({ album }: { album: Album }) {
         {/* ══════════════════════════════════════════════════════ */}
         <div style={{
           position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 'clamp(14px,2.5vh,24px)',
+          alignItems: 'center', justifyContent: 'center', gap: 'clamp(18px,3vh,32px)',
           opacity: phase === 'book' ? 1 : 0,
           pointerEvents: phase === 'book' ? 'auto' : 'none',
           transition: 'opacity .6s',
+          padding: '20px',
         }}>
+          {/* Title above book */}
+          <div style={{
+            fontFamily: "'Playfair Display',serif",
+            fontSize: 'clamp(11px,1.6vw,14px)',
+            color: 'rgba(198,169,126,.55)',
+            letterSpacing: '8px', textTransform: 'uppercase',
+            opacity: currentPage === 0 ? 1 : 0, transition: 'opacity .5s',
+            position: 'absolute', top: 'clamp(20px,5vh,50px)',
+          }}>
+            Memoraa
+          </div>
+ 
           {/* Book */}
-          <div style={{ position: 'relative' }}>
+          <div className="mj-bookwrap" style={{ position: 'relative' }}>
             {FlipBookComp && (
               <FlipBookComp
                 ref={flipRef}
                 width={dims.w}
                 height={dims.h}
                 size="fixed"
+                minWidth={150}
+                maxWidth={500}
+                minHeight={200}
+                maxHeight={700}
                 showCover={true}
                 mobileScrollSupport={false}
                 useMouseEvents={true}
-                clickEventForward={false}
-                flippingTime={800}
+                clickEventForward={true}
+                flippingTime={900}
                 drawShadow={true}
-                maxShadowOpacity={0.4}
-                onFlip={onFlip}
+                maxShadowOpacity={0.5}
+                showPageCorners={true}
+                disableFlipByClick={false}
+                usePortrait={isMobile}
                 startZIndex={10}
+                autoSize={false}
+                onFlip={onFlip}
                 style={{}}
+                className=""
+                startPage={0}
+                swipeDistance={30}
               >
                 {renderPages}
               </FlipBookComp>
             )}
  
             {/* Tap hint on cover */}
-            {currentPage === 0 && (
+            {currentPage === 0 && loaded && FlipBookComp && (
               <div style={{
-                position: 'absolute', bottom: '-28px', left: '50%', transform: 'translateX(-50%)',
-                fontSize: 'clamp(7px,1.3vw,9px)', color: 'rgba(74,63,48,.35)', letterSpacing: '3px',
+                position: 'absolute', bottom: '-32px', left: '50%',
+                fontSize: 'clamp(8px,1.3vw,10px)', color: 'rgba(198,169,126,.55)', letterSpacing: '4px',
                 textTransform: 'uppercase', pointerEvents: 'none', whiteSpace: 'nowrap',
                 animation: 'mj-hint 2.2s ease-in-out infinite',
               }}>
-                tap or swipe to flip
+                {isMobile ? 'swipe to open' : 'click corner to flip'}
               </div>
             )}
           </div>
  
           {/* Nav */}
-          <nav style={{ display: 'flex', alignItems: 'center', gap: 'clamp(14px,3.5vw,28px)', marginTop: '8px' }}>
+          <nav style={{
+            display: 'flex', alignItems: 'center', gap: 'clamp(16px,3.5vw,28px)',
+            marginTop: 'clamp(12px,2vh,20px)',
+          }}>
             <button onClick={flipPrev} style={{
-              width: 'clamp(32px,6vw,42px)', height: 'clamp(32px,6vw,42px)', background: 'none',
-              border: '1px solid rgba(139,115,85,.25)', borderRadius: '50%', color: '#8B7355',
+              width: 'clamp(34px,6vw,44px)', height: 'clamp(34px,6vw,44px)', background: 'rgba(198,169,126,.05)',
+              border: '1px solid rgba(198,169,126,.25)', borderRadius: '50%', color: '#C6A97E',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage === 0 ? .15 : 1, transition: 'all .2s',
-            }}>
+              opacity: currentPage === 0 ? .25 : 1, transition: 'all .25s',
+              backdropFilter: 'blur(8px)',
+            }}
+              onMouseEnter={e => { if (currentPage !== 0) e.currentTarget.style.background = 'rgba(198,169,126,.15)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(198,169,126,.05)'; }}
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 'clamp(9px,1.8vw,12px)', color: '#8B7355', letterSpacing: '3px', opacity: .5, minWidth: '60px', textAlign: 'center' }}>
+            <div style={{
+              fontFamily: "'Playfair Display',serif", fontSize: 'clamp(10px,1.8vw,12px)',
+              color: 'rgba(198,169,126,.7)', letterSpacing: '4px', minWidth: '70px',
+              textAlign: 'center', textTransform: 'uppercase',
+            }}>
               {pageLabel}
             </div>
             <button onClick={flipNext} style={{
-              width: 'clamp(32px,6vw,42px)', height: 'clamp(32px,6vw,42px)', background: 'none',
-              border: '1px solid rgba(139,115,85,.25)', borderRadius: '50%', color: '#8B7355',
+              width: 'clamp(34px,6vw,44px)', height: 'clamp(34px,6vw,44px)', background: 'rgba(198,169,126,.05)',
+              border: '1px solid rgba(198,169,126,.25)', borderRadius: '50%', color: '#C6A97E',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              opacity: currentPage >= totalPages - 2 ? .15 : 1, transition: 'all .2s',
-            }}>
+              opacity: currentPage >= totalPages - 2 ? .25 : 1, transition: 'all .25s',
+              backdropFilter: 'blur(8px)',
+            }}
+              onMouseEnter={e => { if (currentPage < totalPages - 2) e.currentTarget.style.background = 'rgba(198,169,126,.15)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(198,169,126,.05)'; }}
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </nav>
