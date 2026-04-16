@@ -4,16 +4,12 @@ import type { Album } from '@/lib/types';
 
 /*
   ═══════════════════════════════════════════════════════════════
-  MEMORA — MothersDayJourney  [v8 — FINAL]
+  MEMORA — MothersDayJourney  [v9 — DEEP FIX]
   ═══════════════════════════════════════════════════════════════
-  - Opening text sequence: "For Mom" → subtitle → tap to continue
-  - Sunset pastel background
-  - Solid opaque pages (no bleed-through)
-  - Book open animation synced with FlipBook mount
-  - Auto-next with Skip buttons
-  - Phase tooltips (3s auto-fade)
-  - No feedback form → "Love you always" ending
-  - MEMORA TV brand
+  Deep fixes:
+  1. Pages NO LONGER transparent (forced solid bg at ALL library layers)
+  2. Book opening animation: cover REALLY opens (rotateY cover left)
+  3. Single DOM transition: closed book morphs into FlipBook at same position
   ═══════════════════════════════════════════════════════════════
 */
 
@@ -48,7 +44,6 @@ function playFlip() {
   } catch {}
 }
 
-/* Frame corner SVG */
 const FrameCorner = ({ rotate = 0 }: { rotate?: number }) => (
   <svg width="36" height="36" viewBox="0 0 60 60" style={{ transform: `rotate(${rotate}deg)`, position: 'absolute', pointerEvents: 'none' }}>
     <path d="M2 30 Q2 2 30 2 M8 30 Q8 8 30 8 M2 12 Q5 5 12 2 M8 16 Q11 11 16 8" stroke="#c9a97a" strokeWidth=".9" fill="none" opacity=".7"/>
@@ -58,20 +53,27 @@ const FrameCorner = ({ rotate = 0 }: { rotate?: number }) => (
   </svg>
 );
 
+/* 
+   ⚠️ CRITICAL: BookPage now has explicit backgroundColor (not backgroundImage alone)
+   and mj-page class forces opacity 1 via CSS !important
+*/
 const BookPage = forwardRef<HTMLDivElement, { children: React.ReactNode; isCover?: boolean; isBack?: boolean; isLeft?: boolean }>(
   ({ children, isCover, isBack, isLeft }, ref) => (
-    <div ref={ref} className="mj-page" style={{
-      width: '100%', height: '100%',
-      overflow: 'hidden',
-      position: 'relative',
-      background: isCover || isBack
-        ? '#5c1f17'
-        : '#FAF3E2',
-      backgroundImage: isCover || isBack
-        ? 'linear-gradient(135deg,#5c1f17 0%,#3d130d 50%,#5c1f17 100%)'
-        : 'none',
-      opacity: 1,
-    }}>
+    <div
+      ref={ref}
+      className="mj-page"
+      data-density={isCover || isBack ? 'hard' : 'soft'}
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundColor: isCover || isBack ? '#5c1f17' : '#FAF3E2',
+        backgroundImage: isCover || isBack
+          ? 'linear-gradient(135deg,#5c1f17 0%,#3d130d 50%,#5c1f17 100%)'
+          : 'none',
+      }}
+    >
       {!isCover && !isBack && (
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -104,39 +106,33 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   const imageUrls = useMemo(() => photos.map(p => resolveUrl(p.url || '')), [photos]);
 
-  /* Phase flow */
   type Phase = 'loading' | 'intro' | 'book' | 'bookEnd' | 'cassette' | 'tv' | 'ending';
   const [phase, setPhase] = useState<Phase>('loading');
+  const [introStep, setIntroStep] = useState(0);
 
-  /* Intro text state */
-  const [introStep, setIntroStep] = useState(0); // 0=nothing, 1=For Mom, 2=subtitle, 3=tap hint
-
-  /* Loading */
   const [loaded, setLoaded] = useState(false);
   const [loadPct, setLoadPct] = useState(0);
 
-  /* Book */
   const [FlipBookComp, setFlipBookComp] = useState<any>(null);
-  const [bookOpened, setBookOpened] = useState(false);
-  const [openingAnim, setOpeningAnim] = useState(false);
+  const [bookState, setBookState] = useState<'closed' | 'opening' | 'open'>('closed');
   const [currentPage, setCurrentPage] = useState(0);
   const [dims, setDims] = useState({ w: 320, h: 440 });
   const [isMobile, setIsMobile] = useState(false);
 
-  /* TV */
   const [showTV, setShowTV] = useState(false);
   const [tvStatic, setTvStatic] = useState(true);
   const [tvLed, setTvLed] = useState(false);
   const [videoEnded, setVideoEnded] = useState(false);
   const [cassetteEject, setCassetteEject] = useState(false);
 
-  /* Tooltip */
   const [tooltip, setTooltip] = useState<string | null>(null);
 
   const flipRef = useRef<any>(null);
   const vRef = useRef<HTMLVideoElement>(null);
   const iRef = useRef<HTMLIFrameElement>(null);
   const autoTimerRef = useRef<any>(null);
+  const openLockRef = useRef(false);
+  const introTapLockRef = useRef(false);
 
   const totalPages = useMemo(() => {
     let count = 1 + photos.length + 1;
@@ -144,12 +140,10 @@ export function MothersDayJourney({ album }: { album: Album }) {
     return count;
   }, [photos.length]);
 
-  /* Load FlipBook lib */
   useEffect(() => {
     import('react-pageflip').then(mod => setFlipBookComp(() => mod.default)).catch(() => {});
   }, []);
 
-  /* Responsive sizing */
   useEffect(() => {
     const update = () => {
       const vw = window.innerWidth;
@@ -161,14 +155,12 @@ export function MothersDayJourney({ album }: { album: Album }) {
       let pw: number, ph: number;
       if (mobile) {
         if (landscape) {
-          // Landscape mobile: smaller book, fits entirely in viewport
-          const maxBookW = vw * 0.68;
+          const maxBookW = vw * 0.7;
           const maxBookH = vh * 0.72;
           pw = maxBookW / 2;
           ph = pw * 1.32;
           if (ph > maxBookH) { ph = maxBookH; pw = ph / 1.32; }
         } else {
-          // Portrait mobile: 2-page book, fits width
           const maxBookW = vw * 0.92;
           const maxBookH = vh * 0.6;
           pw = maxBookW / 2;
@@ -193,7 +185,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
     };
   }, []);
 
-  /* Preload */
   useEffect(() => {
     const urls = imageUrls.filter(Boolean);
     if (!urls.length) { setLoadPct(100); setLoaded(true); return; }
@@ -215,14 +206,12 @@ export function MothersDayJourney({ album }: { album: Album }) {
     });
   }, [imageUrls]);
 
-  /* Audio init */
   useEffect(() => {
     const h = () => { initAudio(); document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
     document.addEventListener('click', h); document.addEventListener('touchstart', h);
     return () => { document.removeEventListener('click', h); document.removeEventListener('touchstart', h); };
   }, []);
 
-  /* BG music */
   useEffect(() => {
     const mu = (album as any).background_music_url;
     if (!mu) return;
@@ -232,33 +221,32 @@ export function MothersDayJourney({ album }: { album: Album }) {
     return () => { a.pause(); a.src = ''; document.removeEventListener('click', p); document.removeEventListener('touchstart', p); };
   }, [album]);
 
-  /* ── PHASE TRANSITION: loading → intro ── */
   useEffect(() => {
     if (loaded && phase === 'loading') {
       setTimeout(() => setPhase('intro'), 500);
     }
   }, [loaded, phase]);
 
-  /* ── INTRO TEXT SEQUENCE ── */
   useEffect(() => {
     if (phase !== 'intro') return;
-    const t1 = setTimeout(() => setIntroStep(1), 600);      // "For Mom"
-    const t2 = setTimeout(() => setIntroStep(2), 3200);     // subtitle
-    const t3 = setTimeout(() => setIntroStep(3), 7000);     // tap hint
+    const t1 = setTimeout(() => setIntroStep(1), 600);
+    const t2 = setTimeout(() => setIntroStep(2), 3200);
+    const t3 = setTimeout(() => setIntroStep(3), 7000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [phase]);
 
-  const handleIntroTap = () => {
+  const handleIntroTap = useCallback(() => {
     if (phase !== 'intro' || introStep < 3) return;
+    if (introTapLockRef.current) return;
+    introTapLockRef.current = true;
     setPhase('book');
-  };
+  }, [phase, introStep]);
 
-  /* ── TOOLTIPS per phase ── */
   useEffect(() => {
     let msg: string | null = null;
     let delay = 500;
-    if (phase === 'book' && !bookOpened) msg = '✨ Tap the book to open';
-    else if (phase === 'book' && bookOpened) msg = '👆 Swipe or tap to flip pages';
+    if (phase === 'book' && bookState === 'closed') msg = '✨ Tap the book to open';
+    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or tap corner to flip';
     else if (phase === 'cassette') msg = '🎬 Tap the cassette to watch';
     else if (phase === 'tv') msg = '📺 Enjoy the video';
 
@@ -269,21 +257,22 @@ export function MothersDayJourney({ album }: { album: Album }) {
     } else {
       setTooltip(null);
     }
-  }, [phase, bookOpened]);
+  }, [phase, bookState]);
 
-  /* ── BOOK open ── */
+  /* ═══ BOOK OPEN — proper cover rotation animation ═══ */
   const openBook = useCallback(() => {
-    if (bookOpened || openingAnim) return;
+    if (bookState !== 'closed') return;
+    if (openLockRef.current) return;
+    openLockRef.current = true;
     initAudio();
     playFlip();
-    setOpeningAnim(true);
+    setBookState('opening');
+    // After cover rotation (1.2s), mount FlipBook
     setTimeout(() => {
-      setBookOpened(true);
-      setOpeningAnim(false);
-    }, 700);
-  }, [bookOpened, openingAnim]);
+      setBookState('open');
+    }, 1200);
+  }, [bookState]);
 
-  /* ── FLIP ── */
   const onFlip = useCallback((e: any) => {
     playFlip();
     const page = e.data;
@@ -296,7 +285,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
   const flipPrev = () => { try { flipRef.current?.pageFlip()?.flipPrev(); } catch {} };
   const flipNext = () => { try { flipRef.current?.pageFlip()?.flipNext(); } catch {} };
 
-  /* ── AUTO-NEXT (bookEnd, after video) ── */
   useEffect(() => {
     if (phase === 'bookEnd') {
       autoTimerRef.current = setTimeout(() => goToCassette(), 8000);
@@ -310,21 +298,19 @@ export function MothersDayJourney({ album }: { album: Album }) {
     else setPhase('ending');
   };
 
-  /* Keyboard */
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (phase === 'intro' && introStep >= 3 && (e.key === 'Enter' || e.key === ' ')) { handleIntroTap(); return; }
-      if (phase === 'book' && !bookOpened && (e.key === 'Enter' || e.key === ' ')) { openBook(); return; }
-      if (phase === 'book' && bookOpened) {
+      if (phase === 'book' && bookState === 'closed' && (e.key === 'Enter' || e.key === ' ')) { openBook(); return; }
+      if (phase === 'book' && bookState === 'open') {
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') flipNext();
         if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') flipPrev();
       }
     };
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
-  }, [phase, bookOpened, introStep, openBook]);
+  }, [phase, bookState, introStep, openBook, handleIntroTap]);
 
-  /* ── TV ── */
   const openTV = () => {
     setCassetteEject(true);
     setTimeout(() => {
@@ -362,9 +348,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
     : currentPage >= totalPages - 1 ? 'End'
     : `${currentPage} / ${photos.length}`;
 
-  /* ══════════════════════════════════════════════════════════ */
-  /* PAGES                                                       */
-  /* ══════════════════════════════════════════════════════════ */
   const renderPages = useMemo(() => {
     const pages: React.ReactNode[] = [];
     pages.push(
@@ -414,48 +397,24 @@ export function MothersDayJourney({ album }: { album: Album }) {
                   overflow: 'hidden',
                   boxShadow: 'inset 0 0 0 1px rgba(60,40,20,.4)',
                 }}>
-                  <img
-                    src={imageUrls[i] || ''}
-                    alt=""
-                    decoding="async"
-                    draggable={false}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  />
+                  <img src={imageUrls[i] || ''} alt="" decoding="async" draggable={false}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </div>
               </div>
             </div>
-
-            <div style={{
-              width: '85%', textAlign: 'center',
-              transform: `rotate(${tiltAngle * -0.3}deg)`,
-            }}>
+            <div style={{ width: '85%', textAlign: 'center', transform: `rotate(${tiltAngle * -0.3}deg)` }}>
               {title && (
-                <div style={{
-                  fontFamily: "'Caveat',cursive",
-                  fontSize: 'clamp(20px,3.8vw,28px)',
-                  color: '#3a2a1a', lineHeight: 1.2,
-                  marginBottom: '4px', fontWeight: 600,
-                }}>{title}</div>
+                <div style={{ fontFamily: "'Caveat',cursive", fontSize: 'clamp(20px,3.8vw,28px)', color: '#3a2a1a', lineHeight: 1.2, marginBottom: '4px', fontWeight: 600 }}>{title}</div>
               )}
               {caption && (
-                <div style={{
-                  fontFamily: "'Caveat',cursive",
-                  fontSize: 'clamp(15px,2.8vw,22px)',
-                  color: '#5a4530', lineHeight: 1.4,
-                  fontWeight: 400,
-                  maxHeight: '4em', overflow: 'hidden',
-                }}>{caption}</div>
+                <div style={{ fontFamily: "'Caveat',cursive", fontSize: 'clamp(15px,2.8vw,22px)', color: '#5a4530', lineHeight: 1.4, fontWeight: 400, maxHeight: '4em', overflow: 'hidden' }}>{caption}</div>
               )}
             </div>
-
             <div style={{
-              position: 'absolute',
-              bottom: 'clamp(10px,2vw,16px)',
+              position: 'absolute', bottom: 'clamp(10px,2vw,16px)',
               [isLeftPage ? 'left' : 'right']: 'clamp(14px,2.5vw,22px)',
-              fontFamily: "'Caveat',cursive",
-              fontSize: 'clamp(11px,1.8vw,14px)',
-              color: 'rgba(90,60,30,.4)',
-              fontStyle: 'italic',
+              fontFamily: "'Caveat',cursive", fontSize: 'clamp(11px,1.8vw,14px)',
+              color: 'rgba(90,60,30,.4)', fontStyle: 'italic',
             }}>{String(i + 1).padStart(2, '0')}</div>
           </div>
         </BookPage>
@@ -475,43 +434,91 @@ export function MothersDayJourney({ album }: { album: Album }) {
     );
 
     if (pages.length % 2 !== 0) {
-      pages.push(<BookPage key="pad"><div style={{ width: '100%', height: '100%' }} /></BookPage>);
+      pages.push(<BookPage key="pad"><div style={{ width: '100%', height: '100%', backgroundColor: '#FAF3E2' }} /></BookPage>);
     }
     return pages;
   }, [photos, imageUrls, recipient, year]);
 
-  /* ══════════════════════════════════════════════════════════ */
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Playfair+Display:wght@400;500;600&display=swap');
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-        .stf__wrapper{margin:0 auto!important;background:transparent!important}
+        
+        /* ════ CRITICAL PAGE OPACITY FIX ════
+           Force solid background at EVERY react-pageflip layer 
+           to prevent see-through effect */
+        .stf__wrapper{margin:0 auto!important}
         .stf__parent{
-          box-shadow:0 50px 100px -25px rgba(60,30,15,.45),0 30px 60px -15px rgba(60,30,15,.35),0 0 0 1px rgba(60,30,15,.15)!important;
+          box-shadow:0 50px 100px -25px rgba(60,30,15,.5),0 30px 60px -15px rgba(60,30,15,.35),0 0 0 1px rgba(60,30,15,.15)!important;
           border-radius:3px!important;
-          background:transparent!important;
         }
-        .stf__block{background:transparent!important}
-        .mj-page{user-select:none;-webkit-user-select:none;opacity:1!important}
+        .stf__block{background-color:#FAF3E2!important}
+        .mj-page{
+          user-select:none;
+          -webkit-user-select:none;
+          opacity:1!important;
+          -webkit-backface-visibility:hidden;
+          backface-visibility:hidden;
+        }
         .mj-page img{-webkit-user-drag:none}
+        /* Force opaque on every flipping layer */
+        .stf__item, .stf__item > div, .stf__block > div{
+          background-color:#FAF3E2!important;
+        }
+        /* Cover pages override */
+        .mj-page[data-density="hard"],
+        .mj-page[data-density="hard"] ~ *{
+          background-color:#5c1f17!important;
+        }
+        .stf__item:first-child, .stf__item:last-child{
+          background-color:#5c1f17!important;
+        }
+        
         @keyframes mj-spin{to{transform:rotate(360deg)}}
         @keyframes mj-pulse{0%,100%{opacity:.4;transform:translateX(-50%) translateY(0)}50%{opacity:1;transform:translateX(-50%) translateY(-3px)}}
         @keyframes mj-eject{0%{transform:translateY(0) scale(1);opacity:1}30%{transform:translateY(-12px) scale(1.03)}100%{transform:translateY(40px) scale(.5);opacity:0}}
         @keyframes mj-fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes mj-fadeInSlow{from{opacity:0;transform:translateY(20px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes mj-bookEnter{from{opacity:0;transform:scale(.9) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
-        @keyframes mj-bookOpen{0%{transform:scale(1);opacity:1}100%{transform:scale(.85);opacity:0}}
-        @keyframes mj-flipbookIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
-        @keyframes mj-tooltipIn{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(0)}}
-        @keyframes mj-glow{0%,100%{box-shadow:0 30px 60px -15px rgba(60,30,15,.45)}50%{box-shadow:0 30px 60px -15px rgba(60,30,15,.5),0 0 80px rgba(255,180,200,.3)}}
+        
+        /* ════ COVER OPENING ANIMATION ════
+           Rotate cover 180° to left like a real book opening */
+        @keyframes mj-coverOpen{
+          0%{transform:rotateY(0deg);box-shadow:0 4px 20px rgba(0,0,0,.4)}
+          100%{transform:rotateY(-170deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
+        }
+        @keyframes mj-coverShadow{
+          0%{opacity:0}
+          30%{opacity:.4}
+          100%{opacity:0}
+        }
+        @keyframes mj-flipbookReveal{
+          from{opacity:0}
+          to{opacity:1}
+        }
+        @keyframes mj-tooltipIn{
+          0%{opacity:0;transform:translateX(-50%) translateY(-8px)}
+          15%{opacity:1;transform:translateX(-50%) translateY(0)}
+          85%{opacity:1;transform:translateX(-50%) translateY(0)}
+          100%{opacity:0;transform:translateX(-50%) translateY(0)}
+        }
+        @keyframes mj-glow{
+          0%,100%{box-shadow:0 30px 60px -15px rgba(60,30,15,.45)}
+          50%{box-shadow:0 30px 60px -15px rgba(60,30,15,.5),0 0 80px rgba(255,180,200,.3)}
+        }
+        
         .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
-        .mj-flipbook-wrap{animation:mj-flipbookIn .7s ease both}
+        .mj-flipbook-wrap{animation:mj-flipbookReveal .5s ease both}
         .mj-closedbook{animation:mj-glow 4s ease-in-out infinite}
-        .mj-closedbook.opening{animation:mj-bookOpen .7s cubic-bezier(.5,.1,.5,1) forwards}
         .mj-closedbook:hover{transform:translateY(-4px) scale(1.01);transition:transform .35s ease}
+        .mj-cover-rotating{
+          transform-origin:left center;
+          transform-style:preserve-3d;
+          -webkit-transform-style:preserve-3d;
+          animation:mj-coverOpen 1.2s cubic-bezier(.5,.2,.2,1) forwards;
+        }
         .mj-tooltip{animation:mj-tooltipIn 3.5s ease forwards}
-        .mj-heartbeat{animation:mj-pulse 1.8s ease-in-out infinite}
       `}} />
 
       <div style={{
@@ -519,13 +526,12 @@ export function MothersDayJourney({ album }: { album: Album }) {
         fontFamily: "'Cormorant Garamond',serif", color: '#3a2a1a', overflow: 'hidden',
         background: `linear-gradient(to bottom, #C4CBDB 0%, #E8C8C4 25%, #F5D4C8 45%, #E8B8C2 62%, #B8C8D6 82%, #9FB5C7 100%)`,
       }}>
-        {/* Ambient texture */}
         <div style={{
           position: 'fixed', inset: 0, pointerEvents: 'none',
           backgroundImage: `radial-gradient(circle at 15% 20%, rgba(255,220,230,.2) 0%, transparent 40%),radial-gradient(circle at 85% 85%, rgba(180,200,215,.15) 0%, transparent 50%)`,
         }} />
 
-        {/* ── LOADING ── */}
+        {/* LOADING */}
         <div style={{
           position: 'fixed', inset: 0, zIndex: 999,
           background: 'linear-gradient(to bottom, #C4CBDB 0%, #E8C8C4 50%, #9FB5C7 100%)',
@@ -540,12 +546,10 @@ export function MothersDayJourney({ album }: { album: Album }) {
           <div style={{ fontSize: '.55rem', letterSpacing: '.3em', textTransform: 'uppercase', color: 'rgba(92,31,23,.5)' }}>Preparing your memories</div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* INTRO TEXT SEQUENCE                                   */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* INTRO */}
         <div
           onClick={handleIntroTap}
-          onTouchEnd={handleIntroTap}
+          onTouchEnd={(e) => { e.preventDefault(); handleIntroTap(); }}
           style={{
             position: 'fixed', inset: 0, zIndex: 90,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -555,115 +559,132 @@ export function MothersDayJourney({ album }: { album: Album }) {
             padding: '40px 24px',
             cursor: introStep >= 3 ? 'pointer' : 'default',
           }}>
-          {/* "For Mom" */}
           <div style={{
-            fontFamily: "'Caveat',cursive",
-            fontSize: 'clamp(48px,10vw,96px)',
-            color: '#5c1f17',
-            fontWeight: 600,
-            textAlign: 'center',
-            lineHeight: 1,
-            marginBottom: 'clamp(20px,4vw,36px)',
+            fontFamily: "'Caveat',cursive", fontSize: 'clamp(48px,10vw,96px)',
+            color: '#5c1f17', fontWeight: 600, textAlign: 'center',
+            lineHeight: 1, marginBottom: 'clamp(20px,4vw,36px)',
             opacity: introStep >= 1 ? 1 : 0,
             transform: introStep >= 1 ? 'translateY(0)' : 'translateY(20px)',
             transition: 'opacity 2s ease, transform 2s ease',
             textShadow: '0 2px 8px rgba(92,31,23,.1)',
-          }}>
-            For {recipient}
-          </div>
-
-          {/* Subtitle */}
+          }}>For {recipient}</div>
           <div style={{
-            fontFamily: "'Cormorant Garamond',serif",
-            fontStyle: 'italic',
-            fontSize: 'clamp(16px,2.8vw,24px)',
-            color: '#5c1f17',
-            fontWeight: 400,
-            textAlign: 'center',
-            maxWidth: '520px',
-            lineHeight: 1.5,
+            fontFamily: "'Cormorant Garamond',serif", fontStyle: 'italic',
+            fontSize: 'clamp(16px,2.8vw,24px)', color: '#5c1f17', fontWeight: 400,
+            textAlign: 'center', maxWidth: '520px', lineHeight: 1.5,
             opacity: introStep >= 2 ? .85 : 0,
             transform: introStep >= 2 ? 'translateY(0)' : 'translateY(15px)',
             transition: 'opacity 2s ease, transform 2s ease',
-          }}>
-            "I made this from the moments<br />I never want us to lose."
-          </div>
-
-          {/* Tap hint */}
+          }}>"I made this from the moments<br />I never want us to lose."</div>
           <div style={{
             position: 'absolute', bottom: 'clamp(40px,8vh,80px)',
             fontFamily: "'Cormorant Garamond',serif",
-            fontSize: 'clamp(10px,1.4vw,13px)',
-            letterSpacing: '4px',
-            textTransform: 'uppercase',
-            color: 'rgba(92,31,23,.7)',
-            opacity: introStep >= 3 ? 1 : 0,
-            transition: 'opacity 1s ease',
+            fontSize: 'clamp(10px,1.4vw,13px)', letterSpacing: '4px',
+            textTransform: 'uppercase', color: 'rgba(92,31,23,.7)',
+            opacity: introStep >= 3 ? 1 : 0, transition: 'opacity 1s ease',
             animation: introStep >= 3 ? 'mj-pulse 1.8s ease-in-out infinite' : 'none',
-          }}>
-            ✨ Tap anywhere to continue
-          </div>
+          }}>✨ Tap anywhere to continue</div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* BOOK PHASE                                            */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* BOOK */}
         <div style={{
           position: 'fixed', inset: 0,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', gap: 'clamp(18px,3vh,32px)',
           opacity: (phase === 'book' || phase === 'bookEnd') ? 1 : 0,
           pointerEvents: (phase === 'book' || phase === 'bookEnd') ? 'auto' : 'none',
-          transition: 'opacity .6s',
-          padding: '20px',
+          transition: 'opacity .6s', padding: '20px',
         }}>
 
-          {/* CLOSED BOOK */}
-          {!bookOpened && (
-            <div
-              className={`mj-closedbook ${openingAnim ? 'opening' : ''}`}
-              onClick={openBook}
-              onTouchEnd={(e) => { e.preventDefault(); openBook(); }}
-              style={{
-                position: 'relative',
+          {/* ═══ CLOSED BOOK with cover opening animation ═══ */}
+          {bookState !== 'open' && (
+            <div style={{
+              position: 'relative',
+              width: dims.w * 2, // full spread width (so cover can rotate over right page)
+              height: dims.h,
+              perspective: '2500px',
+              perspectiveOrigin: 'center center',
+            }}>
+              {/* INNER BLANK PAGE (visible when cover rotates away) */}
+              <div style={{
+                position: 'absolute',
+                left: '50%', top: 0,
                 width: dims.w, height: dims.h,
-                cursor: 'pointer',
-                transformStyle: 'preserve-3d',
-                perspective: '1500px',
-              }}
-            >
-              <div style={{
-                position: 'absolute', left: 0, top: 0, bottom: 0,
-                width: '14px',
-                background: 'linear-gradient(to right, #2a0a06 0%, #4a1410 50%, #5c1f17 100%)',
-                borderRadius: '2px 0 0 2px',
-                boxShadow: 'inset -2px 0 4px rgba(0,0,0,.4)',
-                zIndex: 2,
+                backgroundColor: '#FAF3E2',
+                backgroundImage: `radial-gradient(circle at 20% 20%, rgba(180,140,90,.03) 0%, transparent 40%),radial-gradient(circle at 80% 70%, rgba(180,140,90,.04) 0%, transparent 40%)`,
+                borderRadius: '0 3px 3px 0',
+                boxShadow: 'inset 8px 0 12px -4px rgba(101,67,33,.2)',
+                opacity: bookState === 'opening' ? 1 : 0,
+                transition: 'opacity .3s ease .5s',
               }} />
-              <div style={{
-                position: 'absolute', left: '14px', top: 0, right: 0, bottom: 0,
-                background: 'linear-gradient(135deg, #5c1f17 0%, #3d130d 50%, #5c1f17 100%)',
-                borderRadius: '0 4px 4px 0',
-                overflow: 'hidden',
-              }}>
+
+              {/* COVER — closed = left side; rotates open */}
+              <div
+                className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
+                onClick={() => { if (bookState === 'closed') openBook(); }}
+                onTouchEnd={(e) => { 
+                  if (bookState === 'closed') { 
+                    e.preventDefault(); 
+                    openBook(); 
+                  } 
+                }}
+                style={{
+                  position: 'absolute',
+                  // When closed: center. When opening: pivot from left edge of right side
+                  left: bookState === 'closed' ? '50%' : '50%',
+                  top: 0,
+                  width: dims.w,
+                  height: dims.h,
+                  transform: bookState === 'closed' ? 'translateX(-50%)' : 'translateX(0)',
+                  transformOrigin: 'left center',
+                  cursor: bookState === 'closed' ? 'pointer' : 'default',
+                  zIndex: 10,
+                  willChange: 'transform',
+                }}
+              >
                 <div style={{
-                  position: 'absolute', inset: 0, pointerEvents: 'none',
-                  backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%),repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 1px, transparent 1px 4px)`,
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(135deg, #5c1f17 0%, #3d130d 50%, #5c1f17 100%)',
+                  borderRadius: bookState === 'closed' ? '4px 4px 4px 4px' : '4px 4px 4px 4px',
+                  overflow: 'hidden',
+                  boxShadow: bookState === 'closed' 
+                    ? '0 20px 40px -10px rgba(0,0,0,.4), inset 2px 0 6px rgba(0,0,0,.4)' 
+                    : 'inset 2px 0 6px rgba(0,0,0,.4)',
+                }}>
+                  <div style={{
+                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                    backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%),repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 1px, transparent 1px 4px)`,
+                  }} />
+                  <CoverFace recipient={recipient} year={year} />
+                </div>
+
+                {/* Spine shadow (left edge, inside) */}
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: '10px',
+                  background: 'linear-gradient(to right, rgba(0,0,0,.5), transparent)',
+                  pointerEvents: 'none',
                 }} />
-                <CoverFace recipient={recipient} year={year} />
               </div>
-              <div style={{
-                position: 'absolute', right: '-3px', top: '6px', bottom: '6px',
-                width: '6px',
-                background: 'linear-gradient(to right, #f5ead2 0%, #d8c9a8 100%)',
-                borderRadius: '0 2px 2px 0',
-                boxShadow: '1px 0 3px rgba(0,0,0,.15)',
-              }} />
+
+              {/* Page stack peek (right edge of closed book) */}
+              {bookState === 'closed' && (
+                <div style={{
+                  position: 'absolute',
+                  left: `calc(50% + ${dims.w / 2 - 3}px)`,
+                  top: '6px', bottom: '6px',
+                  width: '6px',
+                  background: 'linear-gradient(to right, #f5ead2 0%, #d8c9a8 100%)',
+                  borderRadius: '0 2px 2px 0',
+                  boxShadow: '1px 0 3px rgba(0,0,0,.15)',
+                  zIndex: 5,
+                }} />
+              )}
             </div>
           )}
 
-          {/* OPEN BOOK */}
-          {bookOpened && FlipBookComp && (
+          {/* ═══ OPEN BOOK (FlipBook) ═══ */}
+          {bookState === 'open' && FlipBookComp && (
             <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
               <FlipBookComp
                 ref={flipRef}
@@ -689,7 +710,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 onFlip={onFlip}
                 style={{}}
                 className=""
-                startPage={0}
+                startPage={1}
                 swipeDistance={20}
               >
                 {renderPages}
@@ -698,7 +719,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           )}
 
           {/* Nav */}
-          {bookOpened && phase === 'book' && (
+          {bookState === 'open' && phase === 'book' && (
             <nav style={{
               display: 'flex', alignItems: 'center', gap: 'clamp(16px,3.5vw,28px)',
               marginTop: 'clamp(14px,2vh,22px)',
@@ -707,42 +728,19 @@ export function MothersDayJourney({ album }: { album: Album }) {
               <button onClick={flipPrev} style={navBtn(currentPage === 0)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
-              <div style={{
-                fontFamily: "'Caveat',cursive", fontSize: 'clamp(14px,2.2vw,18px)',
-                color: 'rgba(92,31,23,.85)', minWidth: '70px',
-                textAlign: 'center',
-              }}>{pageLabel}</div>
+              <div style={{ fontFamily: "'Caveat',cursive", fontSize: 'clamp(14px,2.2vw,18px)', color: 'rgba(92,31,23,.85)', minWidth: '70px', textAlign: 'center' }}>{pageLabel}</div>
               <button onClick={flipNext} style={navBtn(currentPage >= totalPages - 2)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
             </nav>
           )}
 
-          {/* NEXT button after book ends */}
           {phase === 'bookEnd' && (
-            <button
-              onClick={goToCassette}
-              style={{
-                padding: '14px 36px',
-                background: 'linear-gradient(135deg, #5c1f17 0%, #7a2a1f 100%)',
-                border: '1px solid rgba(212,180,131,.5)',
-                borderRadius: '40px',
-                color: '#F5E6CC',
-                fontFamily: "'Caveat',cursive",
-                fontSize: 'clamp(16px,2.5vw,22px)',
-                cursor: 'pointer',
-                boxShadow: '0 8px 24px -6px rgba(92,31,23,.4)',
-                animation: 'mj-fadeInSlow 1.2s ease both',
-              }}
-            >
-              Continue ✨
-            </button>
+            <button onClick={goToCassette} style={continueBtn}>Continue ✨</button>
           )}
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* CASSETTE                                              */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* CASSETTE */}
         <div style={{
           position: 'fixed', inset: 0, zIndex: phase === 'cassette' ? 50 : 0,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px,2.5vh,24px)',
@@ -751,14 +749,10 @@ export function MothersDayJourney({ album }: { album: Album }) {
         }}>
           <div style={{ fontFamily: "'Caveat',cursive", fontSize: 'clamp(26px,4vw,36px)', color: '#5c1f17' }}>One Last Surprise</div>
           <div style={{ fontSize: 'clamp(8px,1.4vw,10px)', letterSpacing: '.25em', color: 'rgba(92,31,23,.5)', textTransform: 'uppercase' }}>press play to watch</div>
-
           <div
             onClick={openTV}
             onTouchEnd={(e) => { e.preventDefault(); openTV(); }}
-            style={{
-              cursor: 'pointer', transition: 'transform .3s',
-              animation: cassetteEject ? 'mj-eject .6s forwards' : 'none',
-            }}>
+            style={{ cursor: 'pointer', transition: 'transform .3s', animation: cassetteEject ? 'mj-eject .6s forwards' : 'none' }}>
             <svg width="220" height="130" viewBox="0 0 220 130" fill="none">
               <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
               <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
@@ -773,9 +767,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TV                                                     */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* TV */}
         <div style={{
           position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.92)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
@@ -796,100 +788,52 @@ export function MothersDayJourney({ album }: { album: Album }) {
             <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: "'Playfair Display','Cormorant Garamond',serif", fontSize: '.75rem', color: '#C6A97E', letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
             <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#2a251e', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
           </div>
-
-          {/* Skip/Next after video */}
           {(videoEnded || !videoUrl) && (
-            <button
-              onClick={closeToEnding}
-              style={{
-                padding: '12px 32px',
-                background: 'linear-gradient(135deg, #5c1f17 0%, #7a2a1f 100%)',
-                border: '1px solid rgba(212,180,131,.5)',
-                borderRadius: '40px',
-                color: '#F5E6CC',
-                fontFamily: "'Caveat',cursive",
-                fontSize: 'clamp(16px,2.5vw,22px)',
-                cursor: 'pointer',
-                animation: 'mj-fadeInSlow .8s ease both',
-              }}
-            >
-              Continue ✨
-            </button>
+            <button onClick={closeToEnding} style={continueBtn}>Continue ✨</button>
           )}
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* ENDING                                                 */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ENDING */}
         <div style={{
           position: 'fixed', inset: 0, zIndex: phase === 'ending' ? 60 : 0,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          opacity: phase === 'ending' ? 1 : 0,
-          pointerEvents: phase === 'ending' ? 'auto' : 'none',
-          transition: 'opacity 1.5s ease',
-          padding: '40px 24px',
+          opacity: phase === 'ending' ? 1 : 0, pointerEvents: phase === 'ending' ? 'auto' : 'none',
+          transition: 'opacity 1.5s ease', padding: '40px 24px',
         }}>
           <div style={{
-            fontFamily: "'Caveat',cursive",
-            fontSize: 'clamp(56px,11vw,110px)',
-            color: '#5c1f17',
-            fontWeight: 600,
-            textAlign: 'center',
-            lineHeight: 1.1,
+            fontFamily: "'Caveat',cursive", fontSize: 'clamp(56px,11vw,110px)',
+            color: '#5c1f17', fontWeight: 600, textAlign: 'center', lineHeight: 1.1,
             textShadow: '0 2px 12px rgba(92,31,23,.15)',
             animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease both' : 'none',
-          }}>
-            Love you always 💝
-          </div>
+          }}>Love you always 💝</div>
           <div style={{
             marginTop: 'clamp(24px,4vw,40px)',
             fontFamily: "'Cormorant Garamond',serif",
-            fontSize: 'clamp(10px,1.4vw,13px)',
-            letterSpacing: '5px',
-            textTransform: 'uppercase',
-            color: 'rgba(92,31,23,.5)',
+            fontSize: 'clamp(10px,1.4vw,13px)', letterSpacing: '5px',
+            textTransform: 'uppercase', color: 'rgba(92,31,23,.5)',
             animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease 1s both' : 'none',
             opacity: 0,
-          }}>
-            Memora · {year}
-          </div>
+          }}>Memora · {year}</div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TOOLTIP                                                */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* TOOLTIP */}
         {tooltip && (
-          <div
-            key={tooltip}
-            className="mj-tooltip"
-            style={{
-              position: 'fixed',
-              top: 'clamp(24px,6vh,60px)',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 500,
-              padding: '10px 20px',
-              background: 'rgba(92,31,23,.85)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(212,180,131,.4)',
-              borderRadius: '30px',
-              color: '#F5E6CC',
-              fontFamily: "'Caveat',cursive",
-              fontSize: 'clamp(14px,2vw,18px)',
-              letterSpacing: '.02em',
-              pointerEvents: 'none',
-              whiteSpace: 'nowrap',
-              boxShadow: '0 8px 24px rgba(92,31,23,.3)',
-            }}>
-            {tooltip}
-          </div>
+          <div key={tooltip} className="mj-tooltip" style={{
+            position: 'fixed', top: 'clamp(24px,6vh,60px)', left: '50%',
+            transform: 'translateX(-50%)', zIndex: 500,
+            padding: '10px 20px', background: 'rgba(92,31,23,.85)',
+            backdropFilter: 'blur(10px)', border: '1px solid rgba(212,180,131,.4)',
+            borderRadius: '30px', color: '#F5E6CC',
+            fontFamily: "'Caveat',cursive", fontSize: 'clamp(14px,2vw,18px)',
+            letterSpacing: '.02em', pointerEvents: 'none', whiteSpace: 'nowrap',
+            boxShadow: '0 8px 24px rgba(92,31,23,.3)',
+          }}>{tooltip}</div>
         )}
       </div>
     </>
   );
 }
 
-/* ══════════════════════════════════════════════════════════ */
 function CoverFace({ recipient, year }: { recipient: string; year: string }) {
   return (
     <div style={{
@@ -918,3 +862,16 @@ const navBtn = (disabled: boolean): React.CSSProperties => ({
   opacity: disabled ? .25 : 1, transition: 'all .25s',
   backdropFilter: 'blur(8px)',
 });
+
+const continueBtn: React.CSSProperties = {
+  padding: '14px 36px',
+  background: 'linear-gradient(135deg, #5c1f17 0%, #7a2a1f 100%)',
+  border: '1px solid rgba(212,180,131,.5)',
+  borderRadius: '40px',
+  color: '#F5E6CC',
+  fontFamily: "'Caveat',cursive",
+  fontSize: 'clamp(16px,2.5vw,22px)',
+  cursor: 'pointer',
+  boxShadow: '0 8px 24px -6px rgba(92,31,23,.4)',
+  animation: 'mj-fadeInSlow 1.2s ease both',
+};
