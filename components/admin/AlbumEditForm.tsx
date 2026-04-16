@@ -1,281 +1,379 @@
-"use client";
+'use client';
  
-import { useState } from "react";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Album, AlbumPhoto } from "@/lib/types";
+import { useState, useRef } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
+import type { Album } from '@/lib/types';
  
-const fileInputClass =
-  "block w-full max-w-full text-sm text-zinc-200 file:mr-3 file:inline-flex file:max-w-[min(100%,18rem)] file:shrink-0 file:cursor-pointer file:rounded-md file:border file:border-zinc-600 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-100";
- 
-function storageObjectName(original: string, index: number) {
-  const ext = original.includes(".") ? original.slice(original.lastIndexOf(".")).toLowerCase() : "";
-  return `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+function getSupabase() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 }
  
-type PhotoRow = {
-  url: string;         // current URL in DB
-  caption: string;     // current or edited caption
-  newFile: File | null; // if set, replace this photo on save
-};
+type PhotoItem = { url: string; caption: string; title?: string };
  
 export function AlbumEditForm({ album }: { album: Album }) {
-  const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
+  const originalId = album.id;
  
-  const [recipientName, setRecipientName] = useState(album.recipient_name || "");
-  const [photos, setPhotos] = useState<PhotoRow[]>(
-    (album.photos || []).map((p) => ({
-      url: p.url,
-      caption: p.caption || "",
-      newFile: null,
-    })),
+  const [albumId, setAlbumId] = useState(album.id);
+  const [recipientName, setRecipientName] = useState(album.recipient_name || '');
+  const [videoUrl, setVideoUrl] = useState(album.video_url || '');
+  const [musicUrl, setMusicUrl] = useState((album as any).background_music_url || '');
+  const [photos, setPhotos] = useState<PhotoItem[]>(
+    (album.photos || []).map((p: any) => ({
+      url: p.url || '',
+      caption: p.caption || p.description || p.text || '',
+      title: p.title || p.name || '',
+    }))
   );
-  const [coverFile, setCoverFile] = useState<File | null>(null);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [audioFile, setAudioFile] = useState<File | null>(null);
  
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [showIdWarning, setShowIdWarning] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
  
-  function updatePhoto(index: number, patch: Partial<PhotoRow>) {
-    setPhotos((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
-  }
+  /* ── Photo management ── */
+  const updatePhoto = (i: number, field: keyof PhotoItem, value: string) => {
+    setPhotos(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
+  };
  
-  async function uploadToBucket(bucket: string, path: string, file: File): Promise<string> {
-    const { error: upErr } = await supabase.storage.from(bucket).upload(path, file);
-    if (upErr) throw new Error(`Upload failed (${bucket}): ${upErr.message}`);
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-    return data.publicUrl;
-  }
+  const removePhoto = (i: number) => {
+    if (!confirm(`Remove photo ${i + 1}?`)) return;
+    setPhotos(prev => prev.filter((_, idx) => idx !== i));
+  };
  
-  async function onSave(e: React.FormEvent) {
-    e.preventDefault();
-    if (!recipientName.trim()) {
-      setError("Recipient name is required.");
+  const movePhoto = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= photos.length) return;
+    setPhotos(prev => {
+      const arr = [...prev];
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      return arr;
+    });
+  };
+ 
+  const uploadPhoto = async (file: File) => {
+    setUploading(true);
+    try {
+      const supabase = getSupabase();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${albumId}/${Date.now()}.${ext}`;
+ 
+      const { error } = await supabase.storage
+        .from('albums-images')
+        .upload(path, file, { upsert: true });
+ 
+      if (error) throw error;
+ 
+      const { data: urlData } = supabase.storage
+        .from('albums-images')
+        .getPublicUrl(path);
+ 
+      setPhotos(prev => [...prev, { url: urlData.publicUrl, caption: '', title: '' }]);
+      setMsg({ type: 'ok', text: 'Photo uploaded!' });
+    } catch (e: any) {
+      setMsg({ type: 'err', text: `Upload failed: ${e.message}` });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+ 
+  /* ── Save ── */
+  const save = async () => {
+    const idChanged = albumId !== originalId;
+ 
+    if (idChanged && !showIdWarning) {
+      setShowIdWarning(true);
       return;
     }
+ 
+    if (!recipientName.trim()) {
+      setMsg({ type: 'err', text: 'Recipient name is required' });
+      return;
+    }
+ 
     setSaving(true);
-    setError(null);
-    setSavedMsg(null);
+    setMsg(null);
  
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Session expired. Please sign in again.");
+      const supabase = getSupabase();
  
-      const uploadBase = `${user.id}/${album.id}`;
- 
-      // 1) Build updated photos array — replace URLs for photos that have newFile
-      const updatedPhotos: AlbumPhoto[] = [];
-      for (let i = 0; i < photos.length; i++) {
-        const p = photos[i];
-        if (p.newFile) {
-          const path = `${uploadBase}/photos/${storageObjectName(p.newFile.name, i)}`;
-          const newUrl = await uploadToBucket("albums-images", path, p.newFile);
-          updatedPhotos.push({ url: newUrl, caption: p.caption });
-        } else {
-          updatedPhotos.push({ url: p.url, caption: p.caption });
-        }
-      }
- 
-      // 2) Prepare update payload
-      const payload: Partial<Album> = {
+      const updateData: any = {
         recipient_name: recipientName.trim(),
-        photos: updatedPhotos,
+        video_url: videoUrl.trim() || null,
+        background_music_url: musicUrl.trim() || null,
+        cover_image: photos[0]?.url || null,
+        photos: photos.map(p => ({
+          url: p.url,
+          caption: p.caption,
+          ...(p.title ? { title: p.title } : {}),
+        })),
       };
  
-      // 3) Replace cover if selected
-      if (coverFile) {
-        const path = `${uploadBase}/cover/${storageObjectName(coverFile.name, 0)}`;
-        payload.cover_image = await uploadToBucket("albums-images", path, coverFile);
+      if (idChanged) {
+        // ID changed: insert new + delete old
+        const { error: insertError } = await supabase
+          .from('albums')
+          .insert({ ...updateData, id: albumId, admin_id: album.admin_id, created_at: album.created_at });
+ 
+        if (insertError) throw insertError;
+ 
+        // Move feedback to new ID
+        await supabase
+          .from('feedback')
+          .update({ album_id: albumId })
+          .eq('album_id', originalId);
+ 
+        // Delete old album
+        const { error: deleteError } = await supabase
+          .from('albums')
+          .delete()
+          .eq('id', originalId);
+ 
+        if (deleteError) throw deleteError;
+ 
+        setMsg({ type: 'ok', text: `Saved! ID changed. Redirecting...` });
+        setTimeout(() => {
+          window.location.href = `/admin/albums/${albumId}/edit`;
+        }, 1500);
+      } else {
+        const { error } = await supabase
+          .from('albums')
+          .update(updateData)
+          .eq('id', originalId);
+ 
+        if (error) throw error;
+        setMsg({ type: 'ok', text: 'Album saved!' });
       }
  
-      // 4) Replace video if selected
-      if (videoFile) {
-        const path = `${uploadBase}/video/${storageObjectName(videoFile.name, 0)}`;
-        payload.video_url = await uploadToBucket("albums-videos", path, videoFile);
-      }
- 
-      // 5) Replace audio if selected
-      if (audioFile) {
-        const path = `${uploadBase}/audio/${storageObjectName(audioFile.name, 0)}`;
-        payload.background_music_url = await uploadToBucket("albums-audio", path, audioFile);
-      }
- 
-      // 6) Update DB
-      const { error: updateErr } = await supabase
-        .from("albums")
-        .update(payload)
-        .eq("id", album.id);
- 
-      if (updateErr) throw new Error(`Save failed: ${updateErr.message}`);
- 
-      setSavedMsg("Saved successfully. Changes are live.");
-      // Clear file inputs so user knows upload was applied
-      setCoverFile(null);
-      setVideoFile(null);
-      setAudioFile(null);
-      setPhotos((prev) => prev.map((p) => ({ ...p, newFile: null, url: updatedPhotos[prev.indexOf(p)]?.url ?? p.url })));
-      router.refresh();
+      setShowIdWarning(false);
     } catch (e: any) {
-      setError(e.message || "Unknown error");
+      setMsg({ type: 'err', text: `Save failed: ${e.message}` });
     } finally {
       setSaving(false);
     }
-  }
+  };
  
-  async function onDelete() {
-    if (!confirm(`Delete album "${album.recipient_name}"? This cannot be undone.`)) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      const { error: delErr } = await supabase.from("albums").delete().eq("id", album.id);
-      if (delErr) throw new Error(`Delete failed: ${delErr.message}`);
-      router.push("/admin");
-      router.refresh();
-    } catch (e: any) {
-      setError(e.message || "Unknown error");
-      setDeleting(false);
-    }
-  }
+  /* ══════════════════════════════════ */
+  /* RENDER                             */
+  /* ══════════════════════════════════ */
+ 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', background: '#1a1a1a',
+    border: '1px solid #333', borderRadius: '8px', fontSize: '14px',
+    color: '#e5e5e5', outline: 'none', fontFamily: 'inherit',
+  };
+ 
+  const labelStyle: React.CSSProperties = {
+    fontSize: '12px', fontWeight: 600, color: '#999', letterSpacing: '.5px',
+    textTransform: 'uppercase', marginBottom: '6px', display: 'block',
+  };
+ 
+  const sectionStyle: React.CSSProperties = {
+    marginBottom: '20px',
+  };
  
   return (
-    <form className="relative z-0 space-y-6 rounded-xl border border-zinc-800 p-4" onSubmit={onSave}>
-      {/* Recipient */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-zinc-300">Recipient Name</label>
+    <div>
+      {/* Album ID */}
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Album ID</label>
         <input
-          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2"
-          placeholder="Recipient name"
-          value={recipientName}
-          onChange={(e) => setRecipientName(e.target.value)}
-          required
+          value={albumId}
+          onChange={e => { setAlbumId(e.target.value); setShowIdWarning(false); }}
+          style={{ ...inputStyle, borderColor: albumId !== originalId ? '#e74c3c' : '#333' }}
         />
+        {albumId !== originalId && (
+          <div style={{
+            marginTop: '8px', padding: '10px 12px', background: 'rgba(231,76,60,.1)',
+            border: '1px solid rgba(231,76,60,.3)', borderRadius: '8px',
+            fontSize: '12px', color: '#e74c3c', lineHeight: 1.6,
+          }}>
+            ⚠️ <strong>CẢNH BÁO:</strong> Đổi ID sẽ làm tất cả QR card vật lý đang trỏ vào <code>/album/{originalId}</code> bị chết (404). 
+            Chỉ đổi nếu chưa in QR hoặc sẽ in lại QR mới.
+          </div>
+        )}
+      </div>
+ 
+      {/* Recipient Name */}
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Recipient Name</label>
+        <input value={recipientName} onChange={e => setRecipientName(e.target.value)} style={inputStyle} placeholder="Mom" />
+      </div>
+ 
+      {/* Video URL */}
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Video URL (YouTube or direct)</label>
+        <input value={videoUrl} onChange={e => setVideoUrl(e.target.value)} style={inputStyle} placeholder="https://youtube.com/watch?v=..." />
+      </div>
+ 
+      {/* Background Music URL */}
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Background Music URL</label>
+        <input value={musicUrl} onChange={e => setMusicUrl(e.target.value)} style={inputStyle} placeholder="https://..." />
       </div>
  
       {/* Photos */}
-      <div className="space-y-3">
-        <p className="font-medium text-zinc-300">Photos &amp; Captions</p>
-        <p className="text-xs text-zinc-500">Leave the file input empty to keep the existing photo. Change the caption text any time.</p>
-        {photos.map((photo, index) => (
-          <div key={index} className="grid grid-cols-1 gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3 md:grid-cols-[120px_1fr]">
-            <div className="flex items-center justify-center">
-              {photo.newFile ? (
-                <div className="w-28 h-28 rounded-md bg-zinc-800 flex items-center justify-center text-xs text-amber-300 text-center p-2">
-                  New file selected<br />
-                  <span className="text-zinc-400 truncate block max-w-full">{photo.newFile.name}</span>
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Photos ({photos.length})</label>
+ 
+        {photos.map((photo, i) => (
+          <div key={i} style={{
+            background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: '10px',
+            padding: '12px', marginBottom: '10px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              {/* Thumbnail */}
+              <div style={{
+                width: '60px', height: '60px', borderRadius: '6px', overflow: 'hidden',
+                background: '#111', flexShrink: 0,
+              }}>
+                {photo.url && (
+                  <img src={photo.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                )}
+              </div>
+ 
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#C6A97E', marginBottom: '4px' }}>
+                  Photo {i + 1}
                 </div>
-              ) : photo.url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photo.url}
-                  alt={`Photo ${index + 1}`}
-                  className="w-28 h-28 object-cover rounded-md bg-zinc-800"
+                <input
+                  value={photo.url}
+                  onChange={e => updatePhoto(i, 'url', e.target.value)}
+                  style={{ ...inputStyle, fontSize: '11px', padding: '6px 8px' }}
+                  placeholder="Image URL"
                 />
-              ) : (
-                <div className="w-28 h-28 rounded-md bg-zinc-800" />
-              )}
+              </div>
+ 
+              {/* Actions */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <button onClick={() => movePhoto(i, -1)} disabled={i === 0}
+                  style={{ ...btnSmall, opacity: i === 0 ? .3 : 1 }}>↑</button>
+                <button onClick={() => movePhoto(i, 1)} disabled={i === photos.length - 1}
+                  style={{ ...btnSmall, opacity: i === photos.length - 1 ? .3 : 1 }}>↓</button>
+                <button onClick={() => removePhoto(i)}
+                  style={{ ...btnSmall, color: '#e74c3c', borderColor: '#e74c3c' }}>✕</button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <input
-                type="file"
-                accept="image/*"
-                className={fileInputClass}
-                onChange={(e) => updatePhoto(index, { newFile: e.target.files?.[0] ?? null })}
-              />
-              <input
-                className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm"
-                placeholder={`Caption ${index + 1}`}
-                value={photo.caption}
-                onChange={(e) => updatePhoto(index, { caption: e.target.value })}
-              />
-            </div>
+ 
+            {/* Title */}
+            <input
+              value={photo.title || ''}
+              onChange={e => updatePhoto(i, 'title', e.target.value)}
+              style={{ ...inputStyle, fontSize: '12px', padding: '7px 10px', marginBottom: '6px' }}
+              placeholder="Title (optional)"
+            />
+ 
+            {/* Caption */}
+            <textarea
+              value={photo.caption}
+              onChange={e => updatePhoto(i, 'caption', e.target.value)}
+              style={{ ...inputStyle, fontSize: '12px', padding: '7px 10px', resize: 'vertical', minHeight: '50px' }}
+              placeholder="Caption text..."
+            />
           </div>
         ))}
-      </div>
  
-      {/* Media replace */}
-      <div className="space-y-3">
-        <p className="font-medium text-zinc-300">Replace Media (optional)</p>
-        <p className="text-xs text-zinc-500">Leave empty to keep existing files.</p>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-            <span className="text-sm font-medium text-zinc-300">Cover</span>
-            <input
-              type="file"
-              accept="image/*"
-              className={fileInputClass}
-              onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)}
-            />
-            {coverFile ? (
-              <span className="text-xs text-amber-300 truncate">{coverFile.name}</span>
-            ) : (
-              <span className="text-xs text-zinc-500">Keep current</span>
-            )}
-          </label>
-          <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-            <span className="text-sm font-medium text-zinc-300">Video</span>
-            <input
-              type="file"
-              accept="video/*"
-              className={fileInputClass}
-              onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-            />
-            {videoFile ? (
-              <span className="text-xs text-amber-300 truncate">{videoFile.name}</span>
-            ) : (
-              <span className="text-xs text-zinc-500">Keep current</span>
-            )}
-          </label>
-          <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-            <span className="text-sm font-medium text-zinc-300">Background Music</span>
-            <input
-              type="file"
-              accept="audio/*"
-              className={fileInputClass}
-              onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
-            />
-            {audioFile ? (
-              <span className="text-xs text-amber-300 truncate">{audioFile.name}</span>
-            ) : (
-              <span className="text-xs text-zinc-500">Keep current</span>
-            )}
-          </label>
+        {/* Add photo */}
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button onClick={() => setPhotos(prev => [...prev, { url: '', caption: '', title: '' }])}
+            style={{ ...btnPrimary, flex: 1, background: '#1a1a1a', border: '1px dashed #444' }}>
+            + Add photo (URL)
+          </button>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+            style={{ ...btnPrimary, flex: 1, background: '#1a1a1a', border: '1px dashed #C6A97E', color: '#C6A97E' }}>
+            {uploading ? 'Uploading...' : '📁 Upload'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" hidden
+            onChange={e => { if (e.target.files?.[0]) uploadPhoto(e.target.files[0]); }} />
         </div>
       </div>
  
-      {savedMsg ? (
-        <p className="rounded-md border border-emerald-500/40 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-200">
-          {savedMsg}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="rounded-md border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-200">
-          {error}
-        </p>
-      ) : null}
- 
-      <div className="flex items-center justify-between gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={deleting || saving}
-          className="rounded-md border border-red-500/40 px-4 py-2 text-sm text-red-300 hover:bg-red-950/40 disabled:opacity-45"
-        >
-          {deleting ? "Deleting..." : "Delete Album"}
-        </button>
-        <button
-          type="submit"
-          disabled={saving || deleting}
-          className="rounded-md bg-white px-5 py-2 font-semibold text-black disabled:opacity-45"
-        >
-          {saving ? "Saving..." : "Save Changes"}
-        </button>
+      {/* Album Link */}
+      <div style={sectionStyle}>
+        <label style={labelStyle}>Album Preview Link</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input value={`${typeof window !== 'undefined' ? window.location.origin : ''}/album/${albumId}`} readOnly style={{ ...inputStyle, opacity: .7 }} />
+          <button onClick={() => window.open(`/album/${albumId}`, '_blank')}
+            style={{ ...btnPrimary, whiteSpace: 'nowrap', padding: '10px 16px' }}>
+            Open ↗
+          </button>
+        </div>
       </div>
-    </form>
+ 
+      {/* ID change confirmation */}
+      {showIdWarning && (
+        <div style={{
+          padding: '16px', background: 'rgba(231,76,60,.12)',
+          border: '1px solid rgba(231,76,60,.4)', borderRadius: '10px',
+          marginBottom: '16px', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: '#e74c3c', marginBottom: '8px' }}>
+            ⚠️ Xác nhận đổi Album ID
+          </div>
+          <div style={{ fontSize: '12px', color: '#ccc', marginBottom: '12px', lineHeight: 1.6 }}>
+            ID cũ: <code>{originalId}</code><br />
+            ID mới: <code>{albumId}</code><br />
+            Tất cả QR card trỏ vào ID cũ sẽ bị 404!
+          </div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+            <button onClick={() => { setAlbumId(originalId); setShowIdWarning(false); }}
+              style={{ ...btnPrimary, background: '#333' }}>
+              Cancel
+            </button>
+            <button onClick={save} disabled={saving}
+              style={{ ...btnPrimary, background: '#e74c3c', color: '#fff' }}>
+              {saving ? 'Saving...' : 'Confirm & Save'}
+            </button>
+          </div>
+        </div>
+      )}
+ 
+      {/* Save button */}
+      {!showIdWarning && (
+        <button onClick={save} disabled={saving}
+          style={{
+            ...btnPrimary,
+            width: '100%', padding: '14px',
+            background: 'linear-gradient(135deg,#b89a6e,#C6A97E)',
+            color: '#0B0B0B', fontWeight: 700, fontSize: '15px',
+            opacity: saving ? .5 : 1,
+          }}>
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+      )}
+ 
+      {/* Status message */}
+      {msg && (
+        <div style={{
+          marginTop: '12px', padding: '10px 14px', borderRadius: '8px',
+          fontSize: '13px', textAlign: 'center',
+          background: msg.type === 'ok' ? 'rgba(46,204,113,.12)' : 'rgba(231,76,60,.12)',
+          color: msg.type === 'ok' ? '#2ecc71' : '#e74c3c',
+          border: `1px solid ${msg.type === 'ok' ? 'rgba(46,204,113,.3)' : 'rgba(231,76,60,.3)'}`,
+        }}>
+          {msg.text}
+        </div>
+      )}
+ 
+      <div style={{ height: '60px' }} />
+    </div>
   );
 }
  
+/* ── Button styles ── */
+const btnSmall: React.CSSProperties = {
+  width: '26px', height: '26px', background: 'none',
+  border: '1px solid #444', borderRadius: '6px', color: '#888',
+  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: '12px', padding: 0,
+};
+ 
+const btnPrimary: React.CSSProperties = {
+  padding: '10px 14px', background: '#222', border: '1px solid #444',
+  borderRadius: '8px', color: '#e5e5e5', cursor: 'pointer',
+  fontSize: '13px', fontFamily: 'inherit',
+};
