@@ -15,8 +15,8 @@ import type { Album } from '@/lib/types';
 
 /* ── COLOR TOKENS ── */
 const C = {
-  bg:       '#FCF9F2',  // Scene background
-  page:     '#F3EDE3',  // Book page color
+  bg:       '#FFFFFF',  // Scene background
+  page:     '#FFFFFF',  // Book page color
   text:     '#724933',  // UI text (TV, buttons, tooltips)
   textSoft: 'rgba(114,73,51,.65)',
   textFade: 'rgba(114,73,51,.4)',
@@ -390,16 +390,16 @@ export function MothersDayJourney({ album }: { album: Album }) {
             }}>
               <div style={{
                 position: 'absolute', inset: 0,
-                background: 'linear-gradient(135deg, #fdfaf3 0%, #f4ead6 50%, #fdfaf3 100%)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #ffffff 50%, #ffffff 100%)',
                 borderRadius: '4px',
                 padding: 'clamp(10px,2vw,16px)',
-                boxShadow: `inset 0 0 0 1px rgba(180,140,90,.3),inset 0 0 0 4px #fdfaf3,inset 0 0 0 5px rgba(180,140,90,.18)`,
+                boxShadow: `inset 0 0 0 1px rgba(114,73,51,.12),inset 0 0 0 4px #ffffff,inset 0 0 0 5px rgba(114,73,51,.08)`,
               }}>
                 <div style={{ position: 'absolute', top: '4px', left: '4px' }}><FrameCorner rotate={0} /></div>
                 <div style={{ position: 'absolute', top: '4px', right: '4px' }}><FrameCorner rotate={90} /></div>
                 <div style={{ position: 'absolute', bottom: '4px', right: '4px' }}><FrameCorner rotate={180} /></div>
                 <div style={{ position: 'absolute', bottom: '4px', left: '4px' }}><FrameCorner rotate={270} /></div>
-                <div style={{ width: '100%', height: '100%', background: '#1a1410', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(60,40,20,.4)' }}>
+                <div style={{ width: '100%', height: '100%', background: '#ffffff', overflow: 'hidden', boxShadow: 'inset 0 0 0 1px rgba(114,73,51,.10)' }}>
                   <img src={imageUrls[i] || ''} alt="" decoding="async" draggable={false}
                     style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 </div>
@@ -665,7 +665,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 clickEventForward={true}
                 flippingTime={1000}
                 drawShadow={true}
-                maxShadowOpacity={0.5}
+                maxShadowOpacity={0.22}
                 showPageCorners={false}
                 disableFlipByClick={false}
                 usePortrait={false}
@@ -736,7 +736,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
           opacity: showTV ? 1 : 0, pointerEvents: showTV ? 'auto' : 'none', transition: 'opacity .4s',
         }}>
-          <div style={{ position: 'relative', width: 'min(70vw,440px)', background: '#2a251e', borderRadius: '14px 14px 20px 20px', padding: '10px 12px 22px', boxShadow: '0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #5e4e38' }}>
+          <div style={{ position: 'relative', width: 'min(70vw,440px)', background: '#724933', borderRadius: '14px 14px 20px 20px', padding: '10px 12px 22px', boxShadow: '0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px #724933' }}>
             <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
               <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
                 <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
@@ -745,11 +745,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#6b5a48,#4a3e30)' }} />
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
+              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#724933)' }} />
             </div>
             <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: C.text, letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
-            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#2a251e', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
+            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : '#724933', boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
           </div>
           {(videoEnded || !videoUrl) && (
             <button onClick={closeToEnding} style={continueBtn}>Continue</button>
