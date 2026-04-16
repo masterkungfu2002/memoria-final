@@ -261,7 +261,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     let msg: string | null = null;
     let delay = 500;
     if (phase === 'book' && bookState === 'closed') msg = '✨ Tap the book to open';
-    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or tap corner to flip';
+    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or use arrows to turn pages';
     else if (phase === 'cassette') msg = '🎬 Tap the cassette to watch';
     else if (phase === 'tv') msg = '📺 Enjoy the video';
 
@@ -283,7 +283,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     setBookState('opening');
     setTimeout(() => {
       setBookState('open');
-    }, 1200);
+    }, 950);
   }, [bookState]);
 
   const onFlip = useCallback((e: any) => {
@@ -470,8 +470,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
         @keyframes mj-fadeInSlow{from{opacity:0;transform:translateY(20px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes mj-bookEnter{from{opacity:0;transform:scale(.9) translateY(30px)}to{opacity:1;transform:scale(1) translateY(0)}}
         @keyframes mj-coverOpen{
-          0%{transform:rotateY(0deg);box-shadow:0 20px 40px -10px rgba(0,0,0,.4)}
-          100%{transform:rotateY(-172deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
+          0%{transform:translateX(-50%) rotateY(0deg);box-shadow:0 20px 40px -10px rgba(0,0,0,.4)}
+          100%{transform:translateX(-50%) rotateY(-172deg);box-shadow:0 4px 20px rgba(0,0,0,.1)}
         }
         @keyframes mj-flipbookReveal{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
         @keyframes mj-tooltipIn{0%{opacity:0;transform:translateX(-50%) translateY(-8px)}15%{opacity:1;transform:translateX(-50%) translateY(0)}85%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(0)}}
@@ -533,8 +533,8 @@ export function MothersDayJourney({ album }: { album: Album }) {
             cursor: introStep >= 3 ? 'pointer' : 'default',
           }}>
           <div style={{
-            fontFamily: F.hand,
-            fontSize: 'clamp(48px,10vw,96px)',
+            fontFamily: F.sans,
+            fontSize: 'clamp(42px,8vw,72px)',
             color: C.text, fontWeight: 600, textAlign: 'center',
             lineHeight: 1, marginBottom: 'clamp(20px,4vw,36px)',
             opacity: introStep >= 1 ? 1 : 0,
@@ -601,7 +601,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                   position: 'absolute',
                   left: '50%', top: 0,
                   width: dims.w, height: dims.h,
-                  transform: bookState === 'closed' ? 'translateX(-50%)' : 'translateX(0)',
+                  transform: 'translateX(-50%)',
                   transformOrigin: 'left center',
                   cursor: bookState === 'closed' ? 'pointer' : 'default',
                   zIndex: 10,
@@ -638,7 +638,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                   left: `calc(50% + ${dims.w / 2 - 3}px)`,
                   top: '6px', bottom: '6px',
                   width: '6px',
-                  background: 'linear-gradient(to right, #f5ead2 0%, #d8c9a8 100%)',
+                  background: 'linear-gradient(to right, #ffffff 0%, #f5f5f5 100%)',
                   borderRadius: '0 2px 2px 0',
                   boxShadow: '1px 0 3px rgba(0,0,0,.15)',
                   zIndex: 5,
@@ -663,11 +663,11 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 mobileScrollSupport={false}
                 useMouseEvents={true}
                 clickEventForward={true}
-                flippingTime={1000}
+                flippingTime={800}
                 drawShadow={true}
-                maxShadowOpacity={0.22}
+                maxShadowOpacity={0.16}
                 showPageCorners={false}
-                disableFlipByClick={false}
+                disableFlipByClick={true}
                 usePortrait={false}
                 startZIndex={10}
                 autoSize={false}
@@ -675,7 +675,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
                 style={{}}
                 className=""
                 startPage={0}
-                swipeDistance={20}
+                swipeDistance={32}
               >
                 {renderPages}
               </FlipBookComp>
@@ -720,7 +720,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
               <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
               <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
               <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6" />
-              <text x="110" y="52" fontFamily="'Caveat',cursive" fontSize="14" fill="#b89a6e" textAnchor="middle">memories</text>
+              <text x="110" y="52" fontFamily="Inter, sans-serif" fontSize="14" fill="#b89a6e" textAnchor="middle">memories</text>
               <text x="110" y="66" fontFamily="serif" fontSize="6" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
               <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
               <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
@@ -764,7 +764,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           transition: 'opacity 1.5s ease', padding: '40px 24px',
         }}>
           <div style={{
-            fontFamily: F.hand, fontSize: 'clamp(56px,11vw,110px)',
+            fontFamily: F.sans, fontSize: 'clamp(40px,7vw,72px)',
             color: C.text, fontWeight: 600, textAlign: 'center', lineHeight: 1.1,
             textShadow: '0 2px 12px rgba(114,73,51,.12)',
             animation: phase === 'ending' ? 'mj-fadeInSlow 2.5s ease both' : 'none',
