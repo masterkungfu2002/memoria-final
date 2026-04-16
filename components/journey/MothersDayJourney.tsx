@@ -129,6 +129,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   const [FlipBookComp, setFlipBookComp] = useState<any>(null);
   const [bookState, setBookState] = useState<'closed' | 'opening' | 'open'>('closed');
+  const [flipMounted, setFlipMounted] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [dims, setDims] = useState({ w: 320, h: 440 });
   const [isMobile, setIsMobile] = useState(false);
@@ -634,9 +635,14 @@ export function MothersDayJourney({ album }: { album: Album }) {
             </div>
           )}
 
-          {/* OPEN BOOK (no cover in FlipBook) */}
-          {bookState === 'open' && FlipBookComp && (
-            <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
+          {/* FlipBook is mounted during opening, but hidden until cover finishes */}
+          {flipMounted && FlipBookComp && (
+            <div className="mj-flipbook-wrap" style={{
+              position: 'relative',
+              opacity: bookState === 'open' ? 1 : 0,
+              visibility: bookState === 'open' ? 'visible' : 'hidden',
+              pointerEvents: bookState === 'open' ? 'auto' : 'none',
+            }}>
               <FlipBookComp
                 ref={flipRef}
                 width={dims.w}
