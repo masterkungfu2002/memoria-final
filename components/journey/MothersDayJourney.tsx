@@ -273,22 +273,20 @@ export function MothersDayJourney({ album }: { album: Album }) {
   /* ═══ Open book animation ═══
      After cover rotation, we directly jump to first photo spread
      by calling flipNext on a ref timer */
-  const openBook = useCallback(() => {
-    if (bookState !== 'closed') return;
-    if (openLockRef.current) return;
-    openLockRef.current = true;
-    initAudio();
-    playFlip();
-    setBookState('opening');
-    setTimeout(() => {
-      setBookState('open');
-      /* After FlipBook mounts, auto-advance past the ghost cover page
-         so user sees the first real photo spread immediately */
-      setTimeout(() => {
-        try { flipRef.current?.pageFlip()?.flip(1); } catch {}
-      }, 50);
-    }, 720);
-  }, [bookState]);
+ const openBook = useCallback(() => {
+  if (bookState !== 'closed') return;
+  if (openLockRef.current) return;
+
+  openLockRef.current = true;
+  initAudio();
+  playFlip();
+  setBookState('opening');
+
+  setTimeout(() => {
+    setBookState('open');
+    setCurrentPage(1);
+  }, 720);
+}, [bookState]);
 
   const onFlip = useCallback((e: any) => {
     playFlip();
