@@ -483,37 +483,49 @@ export function MothersDayJourney({ album }: { album: Album }) {
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
         
         /* Force white opaque at all library layers */
-        .stf__wrapper{margin:0 auto!important;background:#ffffff!important}
-        .stf__parent{
-          box-shadow:0 18px 40px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.04)!important;
-          border-radius:6px!important;
-          background:#ffffff!important;
-        }
-        .stf__block{background:#ffffff!important}
-        .mj-page{user-select:none;-webkit-user-select:none;opacity:1!important;-webkit-backface-visibility:hidden;backface-visibility:hidden}
-        .mj-page img{-webkit-user-drag:none}
-        .stf__item, .stf__item > div, .stf__block > div{background:#ffffff!important}
-        /* ═══ ROOT CAUSE FIX — Prevent backface flash during page rotation ═══ */
-        .stf__item{
-          backface-visibility:hidden!important;
-          -webkit-backface-visibility:hidden!important;
-          background:#ffffff!important;
-        }
-        .stf__item.--soft{
-          background:#ffffff!important;
-        }
-        .stf__item.--hard{
-          background:${C.cover}!important;
-        }
-        .stf__item > *{
-          backface-visibility:hidden!important;
-          -webkit-backface-visibility:hidden!important;
-        }
-        .stf__block{
-          background:#ffffff!important;
-          perspective:2500px!important;
-        }
-        .mj-page[data-density="hard"]{background-color:${C.cover}!important}
+        .stf__wrapper{margin:0 auto!important;background:transparent!important}
+.stf__parent{
+  box-shadow:0 18px 40px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.04)!important;
+  border-radius:6px!important;
+  background:transparent!important;
+}
+.stf__block{
+  background:transparent!important;
+  perspective:2500px!important;
+}
+.mj-page{
+  user-select:none;
+  -webkit-user-select:none;
+  opacity:1!important;
+  background-clip:padding-box;
+  transform-style:preserve-3d;
+  -webkit-transform-style:preserve-3d;
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.mj-page img{-webkit-user-drag:none}
+.stf__item,
+.stf__item > div,
+.stf__block > div{
+  background:transparent!important;
+}
+.stf__item{
+  background:transparent!important;
+  transform-style:preserve-3d!important;
+  -webkit-transform-style:preserve-3d!important;
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.stf__item.--soft,
+.stf__item.--hard{
+  background:transparent!important;
+}
+.stf__item > *{
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.mj-page[data-density="soft"]{background-color:${C.page}!important}
+.mj-page[data-density="hard"]{background-color:${C.cover}!important}
         
         @keyframes mj-spin{to{transform:rotate(360deg)}}
         @keyframes mj-pulse{0%,100%{opacity:.4;transform:translateX(-50%) translateY(0)}50%{opacity:1;transform:translateX(-50%) translateY(-3px)}}
