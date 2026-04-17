@@ -146,7 +146,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   /* photos + back, pad to even */
   const totalPages = useMemo(() => {
-    let count = photos.length + 1;
+    let count = photos.length + 2; // ghost cover + photos + back cover
     if (count % 2 !== 0) count++;
     return count;
   }, [photos.length]);
@@ -294,7 +294,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
     playFlip();
     const page = e.data;
     setCurrentPage(page);
-    if (page >= totalPages && phase === 'book') {
+    if (page >= totalPages - 1 && phase === 'book') {
       setPhase('bookEnd');
     }
   }, [totalPages, phase]);
