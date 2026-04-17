@@ -623,125 +623,114 @@ export function MothersDayJourney({ album }: { album: Album }) {
           transition: 'opacity .6s', padding: '20px',
         }}>
 
-         {/* Book area — FlipBook mounts underneath cover, cover overlays on top during closed/opening */}
-          <div style={{
-            position: 'relative',
-            width: dims.w * 2,
-            height: dims.h,
-            perspective: '2500px',
-            perspectiveOrigin: 'center center',
-          }}>
-            {/* FlipBook — always mounted once lib loaded, sits underneath cover */}
-            {FlipBookComp && (
-              <div className="mj-flipbook-wrap-v2" style={{
-                position: 'absolute',
-                inset: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: bookState === 'open' ? 1 : 0,
-                transition: 'opacity .45s ease',
-                pointerEvents: bookState === 'open' ? 'auto' : 'none',
-                zIndex: 1,
-              }}>
-                <FlipBookComp
-                  ref={flipRef}
-                  width={dims.w}
-                  height={dims.h}
-                  size="fixed"
-                  minWidth={100}
-                  maxWidth={500}
-                  minHeight={150}
-                  maxHeight={700}
-                  showCover={true}
-                  mobileScrollSupport={false}
-                  useMouseEvents={true}
-                  clickEventForward={true}
-                  flippingTime={700}
-                  drawShadow={true}
-                  maxShadowOpacity={0.18}
-                  showPageCorners={false}
-                  disableFlipByClick={false}
-                  usePortrait={false}
-                  startZIndex={10}
-                  autoSize={false}
-                  onFlip={onFlip}
-                  style={{}}
-                  className=""
-                  startPage={1}
-                  swipeDistance={20}
-                >
-                  {renderPages}
-                </FlipBookComp>
-              </div>
-            )}
-
-            {/* Cover — overlay on top when not fully open, unmounts when open */}
-            {bookState !== 'open' && (
-              <>
-                <div
-                  className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
-                  onClick={() => { if (bookState === 'closed') openBook(); }}
-                  onTouchEnd={(e) => { if (bookState === 'closed') { e.preventDefault(); openBook(); } }}
-                  style={{
-                    position: 'absolute', left: '50%', top: 0,
-                    width: dims.w, height: dims.h,
-                    transform: 'translateX(-50%)',
-                    transformOrigin: 'left center',
-                    transformStyle: 'preserve-3d',
-                    WebkitTransformStyle: 'preserve-3d',
-                    cursor: bookState === 'closed' ? 'pointer' : 'default',
-                    zIndex: 10, willChange: 'transform',
-                  }}
-                >
+          {/* Closed / opening cover */}
+          {bookState !== 'open' && (
+            <div style={{
+              position: 'relative',
+              width: dims.w * 2,
+              height: dims.h,
+              perspective: '2500px',
+              perspectiveOrigin: 'center center',
+            }}>
+              <div
+                className={`mj-closedbook ${bookState === 'opening' ? 'mj-cover-rotating' : ''}`}
+                onClick={() => { if (bookState === 'closed') openBook(); }}
+                onTouchEnd={(e) => { if (bookState === 'closed') { e.preventDefault(); openBook(); } }}
+                style={{
+                  position: 'absolute', left: '50%', top: 0,
+                  width: dims.w, height: dims.h,
+                  transform: 'translateX(-50%)',
+                  transformOrigin: 'left center',
+                  transformStyle: 'preserve-3d',
+                  WebkitTransformStyle: 'preserve-3d',
+                  cursor: bookState === 'closed' ? 'pointer' : 'default',
+                  zIndex: 10, willChange: 'transform',
+                }}
+              >
+                {/* Front face */}
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
+                  borderRadius: '4px', overflow: 'hidden',
+                  boxShadow: bookState === 'closed'
+                    ? '0 20px 40px -10px rgba(0,0,0,.35), inset 2px 0 6px rgba(0,0,0,.4)'
+                    : 'inset 2px 0 6px rgba(0,0,0,.4)',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                  transform: 'translateZ(1px)',
+                }}>
                   <div style={{
-                    position: 'absolute', inset: 0,
-                    background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
-                    borderRadius: '4px', overflow: 'hidden',
-                    boxShadow: bookState === 'closed'
-                      ? '0 20px 40px -10px rgba(0,0,0,.35), inset 2px 0 6px rgba(0,0,0,.4)'
-                      : 'inset 2px 0 6px rgba(0,0,0,.4)',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                    transform: 'translateZ(1px)',
-                  }}>
-                    <div style={{
-                      position: 'absolute', inset: 0, pointerEvents: 'none',
-                      backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%),repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 1px, transparent 1px 4px)`,
-                    }} />
-                    <CoverFace recipient={recipient} year={year} />
-                  </div>
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
-                    borderRadius: '4px',
-                    boxShadow: 'inset -2px 0 6px rgba(0,0,0,.35)',
-                    transform: 'rotateY(180deg) translateZ(1px)',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
+                    position: 'absolute', inset: 0, pointerEvents: 'none',
+                    backgroundImage: `radial-gradient(ellipse at 30% 30%, rgba(139,52,38,.4) 0%, transparent 50%),radial-gradient(ellipse at 70% 70%, rgba(60,15,10,.5) 0%, transparent 60%),repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 1px, transparent 1px 4px)`,
                   }} />
-                  <div style={{
-                    position: 'absolute', left: 0, top: 0, bottom: 0,
-                    width: '10px',
-                    background: 'linear-gradient(to right, rgba(0,0,0,.5), transparent)',
-                    pointerEvents: 'none',
-                  }} />
+                  <CoverFace recipient={recipient} year={year} />
                 </div>
+                {/* Back face - prevents see-through during rotation */}
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: `linear-gradient(135deg, ${C.cover} 0%, #3d130d 50%, ${C.cover} 100%)`,
+                  borderRadius: '4px',
+                  boxShadow: 'inset -2px 0 6px rgba(0,0,0,.35)',
+                  transform: 'rotateY(180deg) translateZ(1px)',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
+                }} />
+                <div style={{
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: '10px',
+                  background: 'linear-gradient(to right, rgba(0,0,0,.5), transparent)',
+                  pointerEvents: 'none',
+                }} />
+              </div>
 
-                {bookState === 'closed' && (
-                  <div style={{
-                    position: 'absolute',
-                    left: `calc(50% + ${dims.w / 2 - 3}px)`,
-                    top: '6px', bottom: '6px', width: '6px',
-                    background: 'linear-gradient(to right, #ffffff 0%, #f1f5f9 100%)',
-                    borderRadius: '0 2px 2px 0',
-                    boxShadow: '1px 0 3px rgba(15,23,42,.1)',
-                    zIndex: 11,
-                  }} />
-                )}
-              </>
-            )}
-          </div>
+              {bookState === 'closed' && (
+                <div style={{
+                  position: 'absolute',
+                  left: `calc(50% + ${dims.w / 2 - 3}px)`,
+                  top: '6px', bottom: '6px', width: '6px',
+                  background: 'linear-gradient(to right, #ffffff 0%, #f1f5f9 100%)',
+                  borderRadius: '0 2px 2px 0',
+                  boxShadow: '1px 0 3px rgba(15,23,42,.1)',
+                  zIndex: 5,
+                }} />
+              )}
+            </div>
+          )}
+
+          {/* OPEN — FlipBook with ghost page trick */}
+          {bookState === 'open' && FlipBookComp && (
+            <div className="mj-flipbook-wrap" style={{ position: 'relative' }}>
+              <FlipBookComp
+                ref={flipRef}
+                width={dims.w}
+                height={dims.h}
+                size="fixed"
+                minWidth={100}
+                maxWidth={500}
+                minHeight={150}
+                maxHeight={700}
+                showCover={true}
+                mobileScrollSupport={false}
+                useMouseEvents={true}
+                clickEventForward={true}
+                flippingTime={700}
+                drawShadow={true}
+                maxShadowOpacity={0.18}
+                showPageCorners={false}
+                disableFlipByClick={false}
+                usePortrait={false}
+                startZIndex={10}
+                autoSize={false}
+                onFlip={onFlip}
+                style={{}}
+                className=""
+                startPage={1}
+                swipeDistance={20}
+              >
+                {renderPages}
+              </FlipBookComp>
+            </div>
+          )}
 
           {bookState === 'open' && phase === 'book' && (
             <nav style={{
