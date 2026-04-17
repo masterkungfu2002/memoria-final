@@ -495,6 +495,26 @@ export function MothersDayJourney({ album }: { album: Album }) {
         .mj-page{user-select:none;-webkit-user-select:none;opacity:1!important;-webkit-backface-visibility:hidden;backface-visibility:hidden}
         .mj-page img{-webkit-user-drag:none}
         .stf__item, .stf__item > div, .stf__block > div{background:#ffffff!important}
+        /* ═══ ROOT CAUSE FIX — Prevent backface flash during page rotation ═══ */
+        .stf__item{
+          backface-visibility:hidden!important;
+          -webkit-backface-visibility:hidden!important;
+          background:#ffffff!important;
+        }
+        .stf__item.--soft{
+          background:#ffffff!important;
+        }
+        .stf__item.--hard{
+          background:${C.cover}!important;
+        }
+        .stf__item > *{
+          backface-visibility:hidden!important;
+          -webkit-backface-visibility:hidden!important;
+        }
+        .stf__block{
+          background:#ffffff!important;
+          perspective:2500px!important;
+        }
         .mj-page[data-density="hard"]{background-color:${C.cover}!important}
         
         @keyframes mj-spin{to{transform:rotate(360deg)}}
