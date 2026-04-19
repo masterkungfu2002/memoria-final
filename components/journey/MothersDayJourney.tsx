@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useCallback, useMemo, forwardRef } from 'react';
 import type { Album } from '@/lib/types';
+import { CassetteTVScene } from '@/components/cassette/CassetteTVScene';
 
 /*
   ═══════════════════════════════════════════════════════════════
@@ -763,62 +764,21 @@ export function MothersDayJourney({ album }: { album: Album }) {
           )}
         </div>
 
-        {/* CASSETTE — sans-serif outside */}
+        {/* CASSETTE + WOODEN TV — new luxury design */}
         <div style={{
-          position: 'fixed', inset: 0, zIndex: phase === 'cassette' ? 50 : 0,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px,2.5vh,24px)',
-          opacity: phase === 'cassette' ? 1 : 0, pointerEvents: phase === 'cassette' ? 'auto' : 'none',
+          position: 'fixed', inset: 0,
+          zIndex: (phase === 'cassette' || phase === 'tv') ? 50 : 0,
+          opacity: (phase === 'cassette' || phase === 'tv') ? 1 : 0,
+          pointerEvents: (phase === 'cassette' || phase === 'tv') ? 'auto' : 'none',
           transition: 'opacity .8s ease',
         }}>
-          <div style={{ fontFamily: F.sans, fontSize: 'clamp(20px,3vw,28px)', color: C.text, fontWeight: 500, letterSpacing: '.02em' }}>One Last Surprise</div>
-          <div style={{ fontFamily: F.sans, fontSize: 'clamp(8px,1.2vw,10px)', letterSpacing: '.3em', color: C.textSoft, textTransform: 'uppercase', fontWeight: 500 }}>press play to watch</div>
-          <div
-            onClick={openTV}
-            onTouchEnd={(e) => { e.preventDefault(); openTV(); }}
-            style={{ cursor: 'pointer', transition: 'transform .3s', animation: cassetteEject ? 'mj-eject .6s forwards' : 'none' }}>
-            <svg width="220" height="130" viewBox="0 0 220 130" fill="none">
-              <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
-              <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
-              <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6" />
-              <text x="110" y="52" fontFamily="Inter, sans-serif" fontSize="9" fontWeight="600" fill="#b89a6e" textAnchor="middle" letterSpacing="3">MEMORIES</text>
-              <text x="110" y="66" fontFamily="Inter, sans-serif" fontSize="6" fontWeight="400" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
-              <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
-              <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
-              <circle cx="60" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="60" cy="93" r="2.5" fill="#b89a6e" />
-              <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="160" cy="93" r="2.5" fill="#b89a6e" />
-            </svg>
-          </div>
-        </div>
-
-        {/* TV — body color #724933 */}
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.92)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
-          opacity: showTV ? 1 : 0, pointerEvents: showTV ? 'auto' : 'none', transition: 'opacity .4s',
-        }}>
-          <div style={{ 
-            position: 'relative', width: 'min(70vw,440px)', 
-            background: C.tv, 
-            borderRadius: '14px 14px 20px 20px', 
-            padding: '10px 12px 22px', 
-            boxShadow: `0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px ${C.tv}` 
-          }}>
-            <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
-              <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
-                <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
-                <video ref={vRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2 }} playsInline controls onEnded={onVideoEnded} />
-                <iframe ref={iRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2, border: 'none', display: 'none' }} allow="autoplay" title="Video" />
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#5c3826)' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#5c3826)' }} />
-            </div>
-            <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: '#F5E6CC', letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
-            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : C.tv, boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
-          </div>
-          {(videoEnded || !videoUrl) && (
-            <button onClick={closeToEnding} style={continueBtn}>Continue</button>
+          {(phase === 'cassette' || phase === 'tv') && (
+            <CassetteTVScene
+              videoUrl={videoUrl}
+              recipient={recipient}
+              year={year}
+              onEnded={closeToEnding}
+            />
           )}
         </div>
 
