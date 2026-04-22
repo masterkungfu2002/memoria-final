@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useCallback, useMemo, forwardRef } from 'react';
 import type { Album } from '@/lib/types';
+import { CassetteTVScene } from '@/components/cassette/CassetteTVScene';
 
 /*
   ═══════════════════════════════════════════════════════════════
@@ -255,34 +256,38 @@ export function MothersDayJourney({ album }: { album: Album }) {
 
   useEffect(() => {
     let msg: string | null = null;
+    const delay = 500;
+    if (phase === 'book' && bookState === 'closed') msg = '✨ Tap the book to open';
+    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe or use arrows to turn pages';
+    else if (phase === 'cassette') msg = '🎬 Tap the cassette to watch';
+    else if (phase === 'tv') msg = '📺 Enjoy the video';
 
-    if (phase === 'intro' && introStep >= 3) msg = '✨ Tap anywhere to begin';
-    else if (phase === 'book' && bookState === 'closed') msg = '📖 Tap the album to open';
-    else if (phase === 'book' && bookState === 'opening') msg = '✨ Opening your album...';
-    else if (phase === 'book' && bookState === 'open') msg = '👆 Swipe left or right to turn pages';
-    else if (phase === 'bookEnd') msg = '🎁 End of album — continue for the surprise';
-    else if (phase === 'cassette') msg = '📼 Tap the cassette to play the final video';
-    else if (phase === 'tv') msg = videoEnded ? '💝 Tap continue when you are ready' : '📺 Watch the video — you can continue anytime';
-    else if (phase === 'ending') msg = '💝 Thank you for watching';
-
-    setTooltip(msg);
-  }, [phase, bookState, introStep, videoEnded]);
+    if (msg) {
+      const showT = setTimeout(() => setTooltip(msg), delay);
+      const hideT = setTimeout(() => setTooltip(null), delay + 3500);
+      return () => { clearTimeout(showT); clearTimeout(hideT); };
+    } else {
+      setTooltip(null);
+    }
+  }, [phase, bookState]);
 
   /* ═══ Open book animation ═══
      After cover rotation, we directly jump to first photo spread
      by calling flipNext on a ref timer */
-  const openBook = useCallback(() => {
-    if (bookState !== 'closed') return;
-    if (openLockRef.current) return;
-    openLockRef.current = true;
-    initAudio();
-    playFlip();
-    setBookState('opening');
-    setTimeout(() => {
-      setBookState('open');
-      setCurrentPage(1);
-    }, 720);
-  }, [bookState]);
+ const openBook = useCallback(() => {
+  if (bookState !== 'closed') return;
+  if (openLockRef.current) return;
+
+  openLockRef.current = true;
+  initAudio();
+  playFlip();
+  setBookState('opening');
+
+  setTimeout(() => {
+    setBookState('open');
+    setCurrentPage(1);
+  }, 720);
+}, [bookState]);
 
   const onFlip = useCallback((e: any) => {
     playFlip();
@@ -354,6 +359,12 @@ export function MothersDayJourney({ album }: { album: Album }) {
     if (iRef.current) { iRef.current.src = ''; iRef.current.style.display = 'none'; }
     setPhase('ending');
   };
+
+  const pageLabel = currentPage >= totalPages
+    ? 'End'
+    : currentPage === 0
+      ? 'Cover'
+      : `${currentPage} / ${photos.length}`;
 
   /* ═══ PAGES with GHOST COVER trick ═══
      Page 0 = ghost cover matching book color (never seen, we skip past it)
@@ -473,37 +484,49 @@ export function MothersDayJourney({ album }: { album: Album }) {
         *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
         
         /* Force white opaque at all library layers */
-        .stf__wrapper{margin:0 auto!important;background:#ffffff!important}
-        .stf__parent{
-          box-shadow:0 18px 40px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.04)!important;
-          border-radius:6px!important;
-          background:#ffffff!important;
-        }
-        .stf__block{background:#ffffff!important}
-        .mj-page{user-select:none;-webkit-user-select:none;opacity:1!important;-webkit-backface-visibility:hidden;backface-visibility:hidden}
-        .mj-page img{-webkit-user-drag:none}
-        .stf__item, .stf__item > div, .stf__block > div{background:#ffffff!important}
-        /* ═══ ROOT CAUSE FIX — Prevent backface flash during page rotation ═══ */
-        .stf__item{
-          backface-visibility:hidden!important;
-          -webkit-backface-visibility:hidden!important;
-          background:#ffffff!important;
-        }
-        .stf__item.--soft{
-          background:#ffffff!important;
-        }
-        .stf__item.--hard{
-          background:${C.cover}!important;
-        }
-        .stf__item > *{
-          backface-visibility:hidden!important;
-          -webkit-backface-visibility:hidden!important;
-        }
-        .stf__block{
-          background:#ffffff!important;
-          perspective:2500px!important;
-        }
-        .mj-page[data-density="hard"]{background-color:${C.cover}!important}
+        .stf__wrapper{margin:0 auto!important;background:transparent!important}
+.stf__parent{
+  box-shadow:0 18px 40px rgba(15,23,42,.08),0 4px 12px rgba(15,23,42,.04)!important;
+  border-radius:6px!important;
+  background:transparent!important;
+}
+.stf__block{
+  background:transparent!important;
+  perspective:2500px!important;
+}
+.mj-page{
+  user-select:none;
+  -webkit-user-select:none;
+  opacity:1!important;
+  background-clip:padding-box;
+  transform-style:preserve-3d;
+  -webkit-transform-style:preserve-3d;
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.mj-page img{-webkit-user-drag:none}
+.stf__item,
+.stf__item > div,
+.stf__block > div{
+  background:transparent!important;
+}
+.stf__item{
+  background:transparent!important;
+  transform-style:preserve-3d!important;
+  -webkit-transform-style:preserve-3d!important;
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.stf__item.--soft,
+.stf__item.--hard{
+  background:transparent!important;
+}
+.stf__item > *{
+  backface-visibility:visible!important;
+  -webkit-backface-visibility:visible!important;
+}
+.mj-page[data-density="soft"]{background-color:${C.page}!important}
+.mj-page[data-density="hard"]{background-color:${C.cover}!important}
         
         @keyframes mj-spin{to{transform:rotate(360deg)}}
         @keyframes mj-pulse{0%,100%{opacity:.4;transform:translateX(-50%) translateY(0)}50%{opacity:1;transform:translateX(-50%) translateY(-3px)}}
@@ -523,7 +546,6 @@ export function MothersDayJourney({ album }: { album: Album }) {
           0%,100%{box-shadow:0 20px 40px -10px rgba(0,0,0,.3)}
           50%{box-shadow:0 20px 40px -10px rgba(0,0,0,.35),0 0 40px rgba(212,180,131,.2)}
         }
-        @keyframes mj-guidePulse{0%,100%{opacity:.72;transform:translateX(-50%) scale(1)}50%{opacity:1;transform:translateX(-50%) scale(1.03)}}
         
         .mj-bookwrap{animation:mj-bookEnter 1s cubic-bezier(.2,.8,.2,1) both}
         .mj-flipbook-wrap{animation:mj-flipbookReveal .3s ease both}
@@ -537,7 +559,7 @@ export function MothersDayJourney({ album }: { album: Album }) {
           -webkit-backface-visibility:hidden;
           animation:mj-coverOpen .72s cubic-bezier(.55,.18,.2,1) forwards;
         }
-        .mj-tooltip{animation:mj-guidePulse 1.8s ease-in-out infinite}
+        .mj-tooltip{animation:mj-tooltipIn 3.5s ease forwards}
       `}} />
 
       <div style={{
@@ -721,67 +743,42 @@ export function MothersDayJourney({ album }: { album: Album }) {
             </div>
           )}
 
+          {bookState === 'open' && phase === 'book' && (
+            <nav style={{
+              display: 'flex', alignItems: 'center', gap: 'clamp(16px,3.5vw,28px)',
+              marginTop: 'clamp(14px,2vh,22px)',
+              animation: 'mj-fadeIn .8s ease both',
+            }}>
+              <button onClick={flipPrev} style={navBtn(currentPage <= 1)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <div style={{ fontFamily: F.sans, fontSize: 'clamp(11px,1.5vw,13px)', color: C.text, minWidth: '70px', textAlign: 'center', fontWeight: 500, letterSpacing: '.05em' }}>{pageLabel}</div>
+              <button onClick={flipNext} style={navBtn(currentPage >= totalPages)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </nav>
+          )}
+
           {phase === 'bookEnd' && (
             <button onClick={goToCassette} style={continueBtn}>Continue</button>
           )}
         </div>
 
-        {/* CASSETTE — sans-serif outside */}
+        {/* CASSETTE + WOODEN TV — new luxury design */}
         <div style={{
-          position: 'fixed', inset: 0, zIndex: phase === 'cassette' ? 50 : 0,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 'clamp(12px,2.5vh,24px)',
-          opacity: phase === 'cassette' ? 1 : 0, pointerEvents: phase === 'cassette' ? 'auto' : 'none',
+          position: 'fixed', inset: 0,
+          zIndex: (phase === 'cassette' || phase === 'tv') ? 50 : 0,
+          opacity: (phase === 'cassette' || phase === 'tv') ? 1 : 0,
+          pointerEvents: (phase === 'cassette' || phase === 'tv') ? 'auto' : 'none',
           transition: 'opacity .8s ease',
         }}>
-          <div style={{ fontFamily: F.sans, fontSize: 'clamp(20px,3vw,28px)', color: C.text, fontWeight: 500, letterSpacing: '.02em' }}>One Last Surprise</div>
-          <div style={{ fontFamily: F.sans, fontSize: 'clamp(8px,1.2vw,10px)', letterSpacing: '.3em', color: C.textSoft, textTransform: 'uppercase', fontWeight: 500 }}>press play to watch</div>
-          <div
-            onClick={openTV}
-            onTouchEnd={(e) => { e.preventDefault(); openTV(); }}
-            style={{ cursor: 'pointer', transition: 'transform .3s', animation: cassetteEject ? 'mj-eject .6s forwards' : 'none' }}>
-            <svg width="220" height="130" viewBox="0 0 220 130" fill="none">
-              <rect x="6" y="12" width="208" height="106" rx="10" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".8" />
-              <rect x="14" y="20" width="192" height="86" rx="7" fill="#fef7ef" />
-              <rect x="24" y="28" width="172" height="46" rx="5" fill="#f4ede3" stroke="#d4c2a8" strokeWidth=".6" />
-              <text x="110" y="52" fontFamily="Inter, sans-serif" fontSize="9" fontWeight="600" fill="#b89a6e" textAnchor="middle" letterSpacing="3">MEMORIES</text>
-              <text x="110" y="66" fontFamily="Inter, sans-serif" fontSize="6" fontWeight="400" fill="#a88d66" textAnchor="middle" letterSpacing="2">WITH LOVE</text>
-              <rect x="30" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
-              <rect x="130" y="84" width="60" height="18" rx="3" fill="#e9dbc9" stroke="#b89a6e" strokeWidth=".5" />
-              <circle cx="60" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="60" cy="93" r="2.5" fill="#b89a6e" />
-              <circle cx="160" cy="93" r="7" fill="#f4ede3" stroke="#b89a6e" strokeWidth=".4" /><circle cx="160" cy="93" r="2.5" fill="#b89a6e" />
-            </svg>
-          </div>
-        </div>
-
-        {/* TV — body color #724933 */}
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.92)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px',
-          opacity: showTV ? 1 : 0, pointerEvents: showTV ? 'auto' : 'none', transition: 'opacity .4s',
-        }}>
-          <div style={{ 
-            position: 'relative', width: 'min(70vw,440px)', 
-            background: C.tv, 
-            borderRadius: '14px 14px 20px 20px', 
-            padding: '10px 12px 22px', 
-            boxShadow: `0 16px 32px rgba(0,0,0,.5),0 0 0 1.5px ${C.tv}` 
-          }}>
-            <div style={{ background: '#0f0e0a', borderRadius: '8px', padding: '4px' }}>
-              <div style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
-                <div style={{ position: 'absolute', inset: 0, background: '#555', transition: 'opacity .5s', zIndex: 5, opacity: tvStatic ? 1 : 0 }} />
-                <video ref={vRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 2 }} playsInline controls onEnded={onVideoEnded} />
-                <iframe ref={iRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 2, border: 'none', display: 'none' }} allow="autoplay" title="Video" />
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#5c3826)' }} />
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%,#8B5C43,#5c3826)' }} />
-            </div>
-            <div style={{ textAlign: 'center', marginTop: '6px', fontFamily: F.sans, fontSize: '.75rem', color: '#F5E6CC', letterSpacing: '6px', fontWeight: 600 }}>MEMORA</div>
-            <div style={{ position: 'absolute', bottom: '-8px', right: '12px', width: '4px', height: '4px', borderRadius: '50%', background: tvLed ? '#2eff5e' : C.tv, boxShadow: tvLed ? '0 0 6px #2eff5e' : 'none', transition: 'all .3s' }} />
-          </div>
-          {showTV && (
-            <button onClick={closeToEnding} style={continueBtn}>{videoEnded || !videoUrl ? 'Continue' : 'Skip'}</button>
+          {(phase === 'cassette' || phase === 'tv') && (
+            <CassetteTVScene
+              videoUrl={videoUrl}
+              recipient={recipient}
+              year={year}
+              onEnded={closeToEnding}
+            />
           )}
         </div>
 
@@ -815,12 +812,9 @@ export function MothersDayJourney({ album }: { album: Album }) {
             backdropFilter: 'blur(10px)', border: `1px solid ${C.gold}66`,
             borderRadius: '30px', color: '#F5E6CC',
             fontFamily: F.sans, fontSize: 'clamp(12px,1.6vw,14px)', fontWeight: 500,
-            letterSpacing: '.02em', pointerEvents: 'none',
+            letterSpacing: '.02em', pointerEvents: 'none', whiteSpace: 'nowrap',
             boxShadow: '0 8px 24px rgba(114,73,51,.25)',
-          textAlign: 'center',
-          maxWidth: 'min(92vw, 520px)',
-          whiteSpace: 'normal',
-        }}>{tooltip}</div>
+          }}>{tooltip}</div>
         )}
       </div>
     </>
@@ -846,6 +840,15 @@ function CoverFace({ recipient, year }: { recipient: string; year: string }) {
   );
 }
 
+const navBtn = (disabled: boolean): React.CSSProperties => ({
+  width: 'clamp(36px,6vw,46px)', height: 'clamp(36px,6vw,46px)',
+  background: `${C.text}14`,
+  border: `1px solid ${C.text}4D`, borderRadius: '50%',
+  color: C.text, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  opacity: disabled ? .25 : 1, transition: 'all .25s',
+  backdropFilter: 'blur(8px)',
+});
 
 const continueBtn: React.CSSProperties = {
   padding: '14px 36px',
