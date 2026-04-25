@@ -1,7 +1,11 @@
 import Link from "next/link";
 import type { Album } from "@/lib/types";
-import { MothersDayJourney } from "@/components/journey/MothersDayJourney";
+import { MemoraQrExperience } from "@/components/album/MemoraQrExperience";
 import { headers } from "next/headers";
+
+function resolveInitialProfile(album: Album): "genz" | "classic" {
+  return album.profile_mode === "genz" ? "genz" : "classic";
+}
 
 export default async function Home({
   searchParams,
@@ -20,19 +24,22 @@ export default async function Home({
     const host = h.get("x-forwarded-host") ?? h.get("host");
     const proto = h.get("x-forwarded-proto") ?? "http";
     const baseUrl = host ? `${proto}://${host}` : "http://localhost:3000";
-    const res = await fetch(new URL(`/api/album/${encodeURIComponent(albumId)}`, baseUrl), { cache: "no-store" });
+    const res = await fetch(new URL(`/api/album/${encodeURIComponent(albumId)}`, baseUrl), {
+      cache: "no-store",
+    });
     if (res.ok) {
       const album = (await res.json()) as Album;
-      return <MothersDayJourney album={album} />;
+      return <MemoraQrExperience album={album} initialProfile={resolveInitialProfile(album)} />;
     }
   }
 
   return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-      <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl space-y-6">
-        <h1 className="font-serif text-3xl">Mother&apos;s Day</h1>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(212,168,75,.12),transparent_30%),linear-gradient(180deg,#050404,#130d0b)] text-white flex items-center justify-center p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-xl space-y-6 text-center">
+        <p className="text-[11px] uppercase tracking-[0.36em] text-[#d4a84b]">MEMORA</p>
+        <h1 className="font-serif text-4xl">Private Memory Archive</h1>
         <p className="text-white/60 text-sm leading-relaxed">
-          Scan a QR code to open an album. Admins can create albums and share links from the dashboard.
+          Open a private QR memory experience or manage albums from the dashboard.
         </p>
         <div className="flex gap-3">
           <Link
