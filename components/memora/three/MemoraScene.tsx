@@ -20,7 +20,7 @@ export function MemoraScene({ album: _album, videoEl: _videoEl }: { album: Album
       )}
 
       {currentAct === 3 && (
-        <CassetteTape visible={true} />
+        <CassetteTape active={true} inserted={false} onInserted={() => undefined} />
       )}
 
       {currentAct === 4 && (
