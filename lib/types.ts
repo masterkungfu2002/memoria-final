@@ -29,6 +29,10 @@ export type Album = {
   opening_message?: string;
   letter_signoff?: string;
   final_message?: string;
+  letter_title?: string;
+  letter_message?: string;
+  letter_hint?: string;
+  letter_closing?: string;
   relationship_mode?: AlbumProfileMode;
   profile_mode?: AlbumProfileMode;
   theme_preset?: AlbumThemePreset | string;

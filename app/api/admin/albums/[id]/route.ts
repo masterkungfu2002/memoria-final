@@ -28,9 +28,9 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
 
     const photos = Array.isArray(body.photos)
       ? body.photos
-          .filter((photo) => photo && typeof photo.url === "string" && photo.url.trim())
+          .filter((photo: { url?: string }) => photo && typeof photo.url === "string" && photo.url.trim())
           .slice(0, 30)
-          .map((photo) => ({
+          .map((photo: Record<string, unknown>) => ({
             url: String(photo.url || "").trim(),
             caption: String(photo.caption || ""),
             title: String(photo.title || ""),
@@ -49,13 +49,20 @@ export async function PATCH(request: Request, props: { params: Promise<{ id: str
     }
 
     const supabase = getAdminClient();
-    const payload = {
+
+    const payload: Record<string, unknown> = {
       recipient_name: String(body.recipient_name || "").trim(),
       sender_name: String(body.sender_name || "").trim() || null,
       cover_image: String(body.cover_image || photos[0]?.url || "").trim(),
       photos,
       video_url: String(body.video_url || "").trim(),
       background_music_url: String(body.background_music_url || "").trim(),
+      opening_letter: String(body.opening_letter || "").trim() || null,
+      final_message: String(body.final_message || "").trim() || null,
+      letter_title: String(body.letter_title || "").trim() || null,
+      letter_message: String(body.letter_message || "").trim() || null,
+      letter_hint: String(body.letter_hint || "").trim() || null,
+      letter_closing: String(body.letter_closing || "").trim() || null,
     };
 
     const { error } = await supabase.from("albums").update(payload).eq("id", id);

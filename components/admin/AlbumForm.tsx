@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
@@ -32,7 +32,11 @@ export function AlbumForm() {
   const [recipientName, setRecipientName] = useState("");
   const [senderName, setSenderName] = useState("");
   const [occasion, setOccasion] = useState("");
-  const [photos, setPhotos] = useState<PhotoInput[]>(Array.from({ length: 6 }, () => emptyPhoto()));
+  const [letterTitle, setLetterTitle] = useState("");
+  const [letterMessage, setLetterMessage] = useState("");
+  const [letterHint, setLetterHint] = useState("");
+  const [letterClosing, setLetterClosing] = useState("");
+  const [photos, setPhotos] = useState<PhotoInput[]>(Array.from({ length: 1 }, () => emptyPhoto()));
   const [video, setVideo] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
@@ -44,7 +48,7 @@ export function AlbumForm() {
 
   const usedPhotos = useMemo(() => photos.filter((p) => p.file), [photos]);
   const photoCount = usedPhotos.length;
-  const canSubmit = recipientName.trim().length > 0 && photoCount >= 6 && photoCount <= 30;
+  const canSubmit = recipientName.trim().length > 0 && photoCount >= 1 && photoCount <= 30;
 
   function updatePhoto(index: number, patch: Partial<PhotoInput>) {
     setPhotos((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
@@ -97,9 +101,7 @@ export function AlbumForm() {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
         setError("Your login session expired. Please log in again.");
@@ -145,10 +147,16 @@ export function AlbumForm() {
         id: albumId,
         admin_id: user.id,
         recipient_name: recipientName.trim(),
+        sender_name: senderName.trim() || null,
         cover_image: coverUrl,
         photos: uploadedPhotos,
         video_url: videoUrl,
         background_music_url: audioUrl,
+        letter_title: letterTitle.trim() || null,
+        letter_message: letterMessage.trim() || null,
+        letter_hint: letterHint.trim() || null,
+        letter_closing: letterClosing.trim() || null,
+        opening_letter: letterMessage.trim() || null,
       });
 
       if (insertError) throw insertError;
@@ -173,7 +181,7 @@ export function AlbumForm() {
         </label>
         <label className="space-y-2">
           <span className="text-xs uppercase tracking-widest text-zinc-400">Sender name</span>
-          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Optional for now" />
+          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Optional" />
         </label>
         <label className="space-y-2">
           <span className="text-xs uppercase tracking-widest text-zinc-400">Occasion</span>
@@ -181,11 +189,36 @@ export function AlbumForm() {
         </label>
       </div>
 
+      <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
+        <div>
+          <p className="text-sm font-semibold text-zinc-100">Opening Letter</p>
+          <p className="mt-1 text-xs text-zinc-500">Optional sealed letter shown before the album opens.</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2">
+            <span className="text-xs uppercase tracking-widest text-zinc-400">Letter title</span>
+            <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" value={letterTitle} onChange={(e) => setLetterTitle(e.target.value)} placeholder="A letter before the story" />
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs uppercase tracking-widest text-zinc-400">Envelope hint</span>
+            <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" value={letterHint} onChange={(e) => setLetterHint(e.target.value)} placeholder="Tap the seal to open" />
+          </label>
+        </div>
+        <label className="space-y-2 block">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Letter message</span>
+          <textarea className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" value={letterMessage} onChange={(e) => setLetterMessage(e.target.value)} placeholder="I made this from the small moments..." rows={4} />
+        </label>
+        <label className="space-y-2 block">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Closing / sign-off</span>
+          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100" value={letterClosing} onChange={(e) => setLetterClosing(e.target.value)} placeholder={`From ${senderName || "[sender]"}`} />
+        </label>
+      </div>
+
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-zinc-100">Photo manager</p>
-            <p className="mt-1 text-xs text-zinc-500">Use 6-30 photos. Upload many at once, then reorder and add captions.</p>
+            <p className="mt-1 text-xs text-zinc-500">1-30 photos. Upload many at once, then reorder and add captions.</p>
           </div>
           <label className="cursor-pointer rounded-full border border-amber-300/35 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-amber-200">
             Add many photos
@@ -250,7 +283,7 @@ export function AlbumForm() {
       </div>
 
       <div className="rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
-        Ready check: {photoCount}/30 photos selected. Minimum for a premium album is 6 photos; recommended is 12-24.
+        Ready check: {photoCount}/30 photos selected.
       </div>
 
       {error ? <p className="rounded-xl border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</p> : null}

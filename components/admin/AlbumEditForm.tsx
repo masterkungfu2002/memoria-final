@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
@@ -26,6 +26,12 @@ export function AlbumEditForm({ album }: { album: Album }) {
   const [senderName, setSenderName] = useState(album.sender_name || "");
   const [videoUrl, setVideoUrl] = useState(album.video_url || "");
   const [musicUrl, setMusicUrl] = useState(album.background_music_url || "");
+  const [letterTitle, setLetterTitle] = useState(album.letter_title || "");
+  const [letterMessage, setLetterMessage] = useState(
+    album.letter_message || album.opening_letter || album.opening_message || "",
+  );
+  const [letterHint, setLetterHint] = useState(album.letter_hint || "");
+  const [letterClosing, setLetterClosing] = useState(album.letter_closing || "");
   const [photos, setPhotos] = useState<EditablePhoto[]>(
     (album.photos || []).map((photo, index) => ({
       url: photo.url || "",
@@ -114,7 +120,7 @@ export function AlbumEditForm({ album }: { album: Album }) {
       const url = await uploadToPublicBucket(bucket, path, file);
       if (isVideo) setVideoUrl(url);
       else setMusicUrl(url);
-      setMessage({ type: "ok", text: `${isVideo ? "Video" : "Music"} uploaded. Click Save album safely to publish it.` });
+      setMessage({ type: "ok", text: `${isVideo ? "Video" : "Music"} uploaded. Click Save to publish.` });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Upload failed." });
     } finally {
@@ -129,10 +135,8 @@ export function AlbumEditForm({ album }: { album: Album }) {
       setMessage({ type: "error", text: "Add a recipient name and keep photos between 1 and 30." });
       return;
     }
-
     setSaving(true);
     setMessage(null);
-
     try {
       const cleanPhotos = photos
         .filter((photo) => photo.url.trim())
@@ -156,14 +160,16 @@ export function AlbumEditForm({ album }: { album: Album }) {
           photos: cleanPhotos,
           video_url: videoUrl.trim(),
           background_music_url: musicUrl.trim(),
+          letter_title: letterTitle.trim(),
+          letter_message: letterMessage.trim(),
+          letter_hint: letterHint.trim(),
+          letter_closing: letterClosing.trim(),
+          opening_letter: letterMessage.trim(),
         }),
       });
 
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || "Save failed.");
-      }
-
+      if (!response.ok) throw new Error(String((result as Record<string, unknown>).error || "Save failed."));
       setMessage({ type: "ok", text: "Album saved. Existing QR links still work." });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Save failed." });
@@ -186,42 +192,72 @@ export function AlbumEditForm({ album }: { album: Album }) {
         <div>
           <p className="text-xs uppercase tracking-widest text-zinc-500">Profile links</p>
           <div className="mt-2 space-y-2 rounded-xl bg-zinc-950 p-3 text-sm">
-            <a className="block break-all text-sky-300" href={classicLink} target="_blank">Classic</a>
-            <a className="block break-all text-sky-300" href={genzLink} target="_blank">Genz</a>
+            <a className="block break-all text-sky-300" href={classicLink} target="_blank" rel="noopener noreferrer">Classic</a>
+            <a className="block break-all text-sky-300" href={genzLink} target="_blank" rel="noopener noreferrer">Genz</a>
           </div>
         </div>
       </section>
 
       <section className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-900/45 p-5">
+        <p className="text-sm font-semibold text-zinc-100">Names</p>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2 block">
             <span className="text-xs uppercase tracking-widest text-zinc-500">Recipient name</span>
-            <input value={recipientName} onChange={(event) => setRecipientName(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+            <input value={recipientName} onChange={(e) => setRecipientName(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
           </label>
           <label className="space-y-2 block">
             <span className="text-xs uppercase tracking-widest text-zinc-500">Sender name</span>
-            <input value={senderName} onChange={(event) => setSenderName(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+            <input value={senderName} onChange={(e) => setSenderName(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
           </label>
+        </div>
+      </section>
+
+      <section className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-900/45 p-5">
+        <div>
+          <p className="text-sm font-semibold text-zinc-100">Opening Letter</p>
+          <p className="mt-1 text-xs text-zinc-500">Sealed envelope shown before the album. Leave blank for defaults.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2 block">
+            <span className="text-xs uppercase tracking-widest text-zinc-500">Letter title</span>
+            <input value={letterTitle} onChange={(e) => setLetterTitle(e.target.value)} placeholder="A letter before the story" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+          </label>
+          <label className="space-y-2 block">
+            <span className="text-xs uppercase tracking-widest text-zinc-500">Envelope hint</span>
+            <input value={letterHint} onChange={(e) => setLetterHint(e.target.value)} placeholder="Tap the seal to open" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+          </label>
+        </div>
+        <label className="space-y-2 block">
+          <span className="text-xs uppercase tracking-widest text-zinc-500">Letter message</span>
+          <textarea value={letterMessage} onChange={(e) => setLetterMessage(e.target.value)} placeholder="I made this from the small moments..." rows={5} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+        </label>
+        <label className="space-y-2 block">
+          <span className="text-xs uppercase tracking-widest text-zinc-500">Closing / sign-off</span>
+          <input value={letterClosing} onChange={(e) => setLetterClosing(e.target.value)} placeholder="From [sender name]" className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+        </label>
+      </section>
+
+      <section className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-900/45 p-5">
+        <p className="text-sm font-semibold text-zinc-100">Media</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 block">
             <span className="text-xs uppercase tracking-widest text-zinc-500">Final video URL</span>
-            <input value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+            <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
             <div className="flex flex-wrap gap-2 pt-1">
               <button type="button" onClick={() => videoFileRef.current?.click()} disabled={uploadingVideo} className="rounded-full border border-amber-300/35 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-amber-200 disabled:opacity-50">
-                {uploadingVideo ? "Uploading video..." : "Upload video file"}
+                {uploadingVideo ? "Uploading..." : "Upload video"}
               </button>
-              <input ref={videoFileRef} type="file" accept="video/*" hidden onChange={(event) => uploadSingleMedia("video", event.target.files?.[0])} />
+              <input ref={videoFileRef} type="file" accept="video/*" hidden onChange={(e) => uploadSingleMedia("video", e.target.files?.[0])} />
             </div>
           </label>
           <label className="space-y-2 block">
             <span className="text-xs uppercase tracking-widest text-zinc-500">Music URL</span>
-            <input value={musicUrl} onChange={(event) => setMusicUrl(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+            <input value={musicUrl} onChange={(e) => setMusicUrl(e.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
             <div className="flex flex-wrap gap-2 pt-1">
               <button type="button" onClick={() => musicFileRef.current?.click()} disabled={uploadingMusic} className="rounded-full border border-amber-300/35 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-amber-200 disabled:opacity-50">
-                {uploadingMusic ? "Uploading music..." : "Upload music file"}
+                {uploadingMusic ? "Uploading..." : "Upload music"}
               </button>
-              <input ref={musicFileRef} type="file" accept="audio/*" hidden onChange={(event) => uploadSingleMedia("music", event.target.files?.[0])} />
+              <input ref={musicFileRef} type="file" accept="audio/*" hidden onChange={(e) => uploadSingleMedia("music", e.target.files?.[0])} />
             </div>
           </label>
         </div>
@@ -231,17 +267,16 @@ export function AlbumEditForm({ album }: { album: Album }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-lg font-semibold">Photo manager</p>
-            <p className="mt-1 text-sm text-zinc-500">{photoCount}/30 photos. Reorder, caption, add hidden notes, and mark highlights.</p>
+            <p className="mt-1 text-sm text-zinc-500">{photoCount}/30 photos</p>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={addPhoto} className="rounded-full border border-zinc-700 px-4 py-2 text-sm">Add URL</button>
-            <button type="button" onClick={() => fileRef.current?.click()} className="rounded-full border border-amber-300/35 px-4 py-2 text-sm text-amber-200" disabled={uploading}>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading} className="rounded-full border border-amber-300/35 px-4 py-2 text-sm text-amber-200">
               {uploading ? "Uploading..." : "Upload photos"}
             </button>
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(event) => addUploadedFiles(event.target.files)} />
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => addUploadedFiles(e.target.files)} />
           </div>
         </div>
-
         <div className="mt-5 space-y-4">
           {photos.map((photo, index) => (
             <div key={`${photo.url}-${index}`} className="rounded-2xl border border-zinc-800 bg-zinc-950/55 p-4">
@@ -250,15 +285,15 @@ export function AlbumEditForm({ album }: { album: Album }) {
                   {photo.url ? <Image src={photo.url} alt="" fill className="object-cover" unoptimized /> : null}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <input value={photo.url} onChange={(event) => updatePhoto(index, { url: event.target.value })} placeholder="Image URL" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
-                  <input value={photo.title || ""} onChange={(event) => updatePhoto(index, { title: event.target.value })} placeholder="Title" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm" />
-                  <select value={photo.chapter || chapters[0]} onChange={(event) => updatePhoto(index, { chapter: event.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm">
-                    {chapters.map((chapter) => <option key={chapter}>{chapter}</option>)}
+                  <input value={photo.url} onChange={(e) => updatePhoto(index, { url: e.target.value })} placeholder="Image URL" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
+                  <input value={photo.title || ""} onChange={(e) => updatePhoto(index, { title: e.target.value })} placeholder="Title" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm" />
+                  <select value={photo.chapter || chapters[0]} onChange={(e) => updatePhoto(index, { chapter: e.target.value })} className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm">
+                    {chapters.map((c) => <option key={c}>{c}</option>)}
                   </select>
-                  <textarea value={photo.caption || ""} onChange={(event) => updatePhoto(index, { caption: event.target.value })} placeholder="Caption" className="min-h-20 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
-                  <input value={photo.hidden_note || ""} onChange={(event) => updatePhoto(index, { hidden_note: event.target.value })} placeholder="Hidden note" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
+                  <textarea value={photo.caption || ""} onChange={(e) => updatePhoto(index, { caption: e.target.value })} placeholder="Caption" className="min-h-20 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
+                  <input value={photo.hidden_note || ""} onChange={(e) => updatePhoto(index, { hidden_note: e.target.value })} placeholder="Hidden note" className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" />
                   <label className="flex items-center gap-2 text-sm text-zinc-400">
-                    <input type="checkbox" checked={!!photo.highlight} onChange={(event) => updatePhoto(index, { highlight: event.target.checked })} />
+                    <input type="checkbox" checked={!!photo.highlight} onChange={(e) => updatePhoto(index, { highlight: e.target.checked })} />
                     Highlight
                   </label>
                 </div>

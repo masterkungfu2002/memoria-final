@@ -37,8 +37,7 @@ function parsePhotos(raw: unknown): AlbumPhoto[] | null {
   const list = normalizeRawPhotos(raw);
   if (!list) return null;
 
-  // Viewer supports 1-30. Admin/setup may later enforce a business minimum,
-  // but the public QR should never break just because an album has fewer than 6.
+  // Viewer supports 1-30.
   if (list.length < 1 || list.length > 30) return null;
 
   const out: AlbumPhoto[] = [];
@@ -113,6 +112,10 @@ export function validateAlbumRow(row: Record<string, unknown>): AlbumValidationO
       opening_message: optionalString(row.opening_message),
       letter_signoff: optionalString(row.letter_signoff),
       final_message: optionalString(row.final_message),
+      letter_title: optionalString(row.letter_title),
+      letter_message: optionalString(row.letter_message),
+      letter_hint: optionalString(row.letter_hint),
+      letter_closing: optionalString(row.letter_closing),
       relationship_mode:
         row.relationship_mode === "genz" || row.relationship_mode === "classic" || row.relationship_mode === "auto"
           ? row.relationship_mode
