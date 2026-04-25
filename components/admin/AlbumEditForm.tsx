@@ -23,6 +23,7 @@ async function uploadToPublicBucket(bucket: string, path: string, file: File) {
 
 export function AlbumEditForm({ album }: { album: Album }) {
   const [recipientName, setRecipientName] = useState(album.recipient_name || "");
+  const [senderName, setSenderName] = useState(album.sender_name || "");
   const [videoUrl, setVideoUrl] = useState(album.video_url || "");
   const [musicUrl, setMusicUrl] = useState(album.background_music_url || "");
   const [photos, setPhotos] = useState<EditablePhoto[]>(
@@ -133,7 +134,6 @@ export function AlbumEditForm({ album }: { album: Album }) {
     setMessage(null);
 
     try {
-      const supabase = createSupabaseBrowserClient();
       const cleanPhotos = photos
         .filter((photo) => photo.url.trim())
         .slice(0, 30)
@@ -146,18 +146,24 @@ export function AlbumEditForm({ album }: { album: Album }) {
           highlight: !!photo.highlight,
         }));
 
-      const { error } = await supabase
-        .from("albums")
-        .update({
+      const response = await fetch(`/api/admin/albums/${album.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           recipient_name: recipientName.trim(),
+          sender_name: senderName.trim(),
           cover_image: cleanPhotos[0]?.url || album.cover_image,
           photos: cleanPhotos,
           video_url: videoUrl.trim(),
           background_music_url: musicUrl.trim(),
-        })
-        .eq("id", album.id);
+        }),
+      });
 
-      if (error) throw error;
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || "Save failed.");
+      }
+
       setMessage({ type: "ok", text: "Album saved. Existing QR links still work." });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Save failed." });
@@ -187,10 +193,16 @@ export function AlbumEditForm({ album }: { album: Album }) {
       </section>
 
       <section className="space-y-4 rounded-3xl border border-zinc-800 bg-zinc-900/45 p-5">
-        <label className="space-y-2 block">
-          <span className="text-xs uppercase tracking-widest text-zinc-500">Recipient name</span>
-          <input value={recipientName} onChange={(event) => setRecipientName(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
-        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-2 block">
+            <span className="text-xs uppercase tracking-widest text-zinc-500">Recipient name</span>
+            <input value={recipientName} onChange={(event) => setRecipientName(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+          </label>
+          <label className="space-y-2 block">
+            <span className="text-xs uppercase tracking-widest text-zinc-500">Sender name</span>
+            <input value={senderName} onChange={(event) => setSenderName(event.target.value)} className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" />
+          </label>
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2 block">
             <span className="text-xs uppercase tracking-widest text-zinc-500">Final video URL</span>
