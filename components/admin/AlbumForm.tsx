@@ -5,10 +5,23 @@ import Image from "next/image";
 import QRCode from "qrcode";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type PhotoInput = { file: File | null; caption: string };
+type PhotoInput = {
+  file: File | null;
+  caption: string;
+  title: string;
+  chapter: string;
+  hidden_note: string;
+  highlight: boolean;
+};
+
+const chapterOptions = ["How it started", "Little things", "Favorite us", "Still choosing you", "One last thing"];
 
 const fileInputClass =
-  "block w-full max-w-full text-sm text-zinc-200 file:mr-3 file:inline-flex file:max-w-[min(100%,18rem)] file:shrink-0 file:cursor-pointer file:rounded-md file:border file:border-zinc-600 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-100";
+  "block w-full text-sm text-zinc-200 file:mr-3 file:cursor-pointer file:rounded-md file:border file:border-zinc-600 file:bg-zinc-800 file:px-3 file:py-2 file:text-zinc-100";
+
+function emptyPhoto(file: File | null = null): PhotoInput {
+  return { file, caption: "", title: "", chapter: chapterOptions[0], hidden_note: "", highlight: false };
+}
 
 function storageObjectName(original: string, index: number) {
   const ext = original.includes(".") ? original.slice(original.lastIndexOf(".")).toLowerCase() : "";
@@ -17,225 +30,248 @@ function storageObjectName(original: string, index: number) {
 
 export function AlbumForm() {
   const [recipientName, setRecipientName] = useState("");
-  const [photos, setPhotos] = useState<PhotoInput[]>(
-    Array.from({ length: 6 }, () => ({ file: null, caption: "" })),
-  );
+  const [senderName, setSenderName] = useState("");
+  const [occasion, setOccasion] = useState("");
+  const [photos, setPhotos] = useState<PhotoInput[]>(Array.from({ length: 6 }, () => emptyPhoto()));
   const [video, setVideo] = useState<File | null>(null);
   const [audio, setAudio] = useState<File | null>(null);
   const [cover, setCover] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [albumUrl, setAlbumUrl] = useState<string | null>(null);
+  const [setupUrl, setSetupUrl] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const photoCount = useMemo(() => photos.filter((p) => p.file).length, [photos]);
-  const canSubmit = useMemo(
-    () =>
-      recipientName.trim().length > 0 &&
-      photoCount >= 6 &&
-      photoCount <= 10 &&
-      !!video &&
-      !!audio &&
-      !!cover,
-    [audio, cover, photoCount, recipientName, video],
-  );
-  const missingHint = useMemo(() => {
-    const parts: string[] = [];
-    if (!recipientName.trim()) parts.push("tên người nhận");
-    if (photoCount < 6) parts.push(`ít nhất 6 ảnh (hiện: ${photoCount})`);
-    if (!cover) parts.push("ảnh bìa");
-    if (!video) parts.push("video");
-    if (!audio) parts.push("nhạc nền");
-    return parts.length ? `Còn thiếu: ${parts.join(", ")}.` : null;
-  }, [audio, cover, photoCount, recipientName, video]);
+
+  const usedPhotos = useMemo(() => photos.filter((p) => p.file), [photos]);
+  const photoCount = usedPhotos.length;
+  const canSubmit = recipientName.trim().length > 0 && photoCount >= 6 && photoCount <= 30;
 
   function updatePhoto(index: number, patch: Partial<PhotoInput>) {
     setPhotos((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function addPhotoSlot(file: File | null = null) {
+    setPhotos((prev) => (prev.length >= 30 ? prev : [...prev, emptyPhoto(file)]));
+  }
+
+  function removePhoto(index: number) {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function movePhoto(index: number, dir: -1 | 1) {
+    setPhotos((prev) => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function addFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setPhotos((prev) => {
+      const next = [...prev];
+      for (const file of Array.from(files)) {
+        const emptyIndex = next.findIndex((item) => !item.file);
+        if (emptyIndex >= 0) next[emptyIndex] = { ...next[emptyIndex], file };
+        else if (next.length < 30) next.push(emptyPhoto(file));
+      }
+      return next.slice(0, 30);
+    });
+  }
+
+  async function uploadFile(bucket: string, path: string, file: File) {
+    const supabase = createSupabaseBrowserClient();
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+    if (uploadError) throw uploadError;
+    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
     if (!canSubmit) return;
 
     setSubmitting(true);
     setError(null);
 
-    const supabase = createSupabaseBrowserClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setError("Your login session expired. Please log in again.");
+        setSubmitting(false);
+        return;
+      }
+
+      const albumId = crypto.randomUUID();
+      const uploadBase = `${user.id}/${albumId}`;
+      const uploadedPhotos = [];
+
+      for (let i = 0; i < usedPhotos.length; i += 1) {
+        const item = usedPhotos[i];
+        if (!item.file) continue;
+        const path = `${uploadBase}/photos/${storageObjectName(item.file.name, i)}`;
+        const url = await uploadFile("albums-images", path, item.file);
+        uploadedPhotos.push({
+          url,
+          caption: item.caption,
+          title: item.title,
+          chapter: item.chapter,
+          hidden_note: item.hidden_note,
+          highlight: item.highlight,
+        });
+      }
+
+      let coverUrl = uploadedPhotos[0]?.url ?? "";
+      if (cover) {
+        coverUrl = await uploadFile("albums-images", `${uploadBase}/cover/${storageObjectName(cover.name, 0)}`, cover);
+      }
+
+      let videoUrl = "";
+      if (video) {
+        videoUrl = await uploadFile("albums-videos", `${uploadBase}/video/${storageObjectName(video.name, 0)}`, video);
+      }
+
+      let audioUrl = "";
+      if (audio) {
+        audioUrl = await uploadFile("albums-audio", `${uploadBase}/audio/${storageObjectName(audio.name, 0)}`, audio);
+      }
+
+      const { error: insertError } = await supabase.from("albums").insert({
+        id: albumId,
+        admin_id: user.id,
+        recipient_name: recipientName.trim(),
+        cover_image: coverUrl,
+        photos: uploadedPhotos,
+        video_url: videoUrl,
+        background_music_url: audioUrl,
+      });
+
+      if (insertError) throw insertError;
+
+      const classicUrl = `${window.location.origin}/album/${albumId}?profile=classic`;
+      setAlbumUrl(classicUrl);
+      setSetupUrl(`${window.location.origin}/setup/${albumId}`);
+      setQrDataUrl(await QRCode.toDataURL(classicUrl, { margin: 2, width: 220 }));
       setSubmitting(false);
-      setError("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
-      return;
-    }
-
-    const usedPhotos = photos.filter((p): p is { file: File; caption: string } => !!p.file);
-    const albumId = crypto.randomUUID();
-    const uploadBase = `${user.id}/${albumId}`;
-
-    const uploadedPhotos: { url: string; caption: string }[] = [];
-    for (let i = 0; i < usedPhotos.length; i += 1) {
-      const p = usedPhotos[i];
-      const path = `${uploadBase}/photos/${storageObjectName(p.file.name, i)}`;
-      const { error: upErr } = await supabase.storage.from("albums-images").upload(path, p.file);
-      if (upErr) {
-        setSubmitting(false);
-        setError(`Upload ảnh thất bại: ${upErr.message}. Kiểm tra bucket albums-images và Storage policies (cho phép user đã đăng nhập upload).`);
-        return;
-      }
-      const { data } = supabase.storage.from("albums-images").getPublicUrl(path);
-      uploadedPhotos.push({ url: data.publicUrl, caption: p.caption });
-    }
-
-    if (uploadedPhotos.length < 6 || uploadedPhotos.length > 10) {
+    } catch (err) {
       setSubmitting(false);
-      setError(`Số ảnh sau upload không hợp lệ (${uploadedPhotos.length}). Cần 6–10 ảnh.`);
-      return;
+      setError(err instanceof Error ? err.message : "Could not create album.");
     }
-
-    const coverPath = `${uploadBase}/cover/${storageObjectName(cover!.name, 0)}`;
-    {
-      const { error: upErr } = await supabase.storage.from("albums-images").upload(coverPath, cover!);
-      if (upErr) {
-        setSubmitting(false);
-        setError(`Upload ảnh bìa thất bại: ${upErr.message}`);
-        return;
-      }
-    }
-    const { data: coverData } = supabase.storage.from("albums-images").getPublicUrl(coverPath);
-
-    const videoPath = `${uploadBase}/video/${storageObjectName(video!.name, 0)}`;
-    {
-      const { error: upErr } = await supabase.storage.from("albums-videos").upload(videoPath, video!);
-      if (upErr) {
-        setSubmitting(false);
-        setError(`Upload video thất bại: ${upErr.message}`);
-        return;
-      }
-    }
-    const { data: videoData } = supabase.storage.from("albums-videos").getPublicUrl(videoPath);
-
-    const audioPath = `${uploadBase}/audio/${storageObjectName(audio!.name, 0)}`;
-    {
-      const { error: upErr } = await supabase.storage.from("albums-audio").upload(audioPath, audio!);
-      if (upErr) {
-        setSubmitting(false);
-        setError(`Upload nhạc thất bại: ${upErr.message}`);
-        return;
-      }
-    }
-    const { data: audioData } = supabase.storage.from("albums-audio").getPublicUrl(audioPath);
-
-    const { error: insertErr } = await supabase.from("albums").insert({
-      id: albumId,
-      admin_id: user.id,
-      recipient_name: recipientName.trim(),
-      cover_image: coverData.publicUrl,
-      photos: uploadedPhotos,
-      video_url: videoData.publicUrl,
-      background_music_url: audioData.publicUrl,
-    });
-
-    if (insertErr) {
-      setSubmitting(false);
-      setError(
-        `Lưu album thất bại: ${insertErr.message}. Nếu liên quan "photos" hoặ RLS, chạy lại schema SQL hoặc kiểm tra quyền bảng albums.`,
-      );
-      return;
-    }
-
-    const url = `${window.location.origin}/album/${albumId}`;
-    setAlbumUrl(url);
-    setQrDataUrl(await QRCode.toDataURL(url));
-    setSubmitting(false);
   }
 
   return (
-    <form className="relative z-0 space-y-4 rounded-xl border border-zinc-800 p-4" onSubmit={onSubmit}>
-      <input
-        className="w-full rounded-md border border-zinc-700 px-3 py-2"
-        placeholder="Recipient name"
-        value={recipientName}
-        onChange={(e) => setRecipientName(e.target.value)}
-        required
-      />
-      <div className="space-y-3">
-        <p className="font-medium">Photos (6-10)</p>
-        {photos.map((photo, index) => (
-          <div key={index} className="grid grid-cols-1 gap-2 md:grid-cols-2 md:items-center">
-            <input
-              type="file"
-              accept="image/*"
-              className={fileInputClass}
-              onChange={(e) => updatePhoto(index, { file: e.target.files?.[0] ?? null })}
-            />
-            <input
-              className="rounded-md border border-zinc-700 px-3 py-2"
-              placeholder={`Caption ${index + 1}`}
-              value={photo.caption}
-              onChange={(e) => updatePhoto(index, { caption: e.target.value })}
-            />
+    <form className="space-y-6 rounded-3xl border border-zinc-800 bg-zinc-900/45 p-5" onSubmit={onSubmit}>
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Recipient name</span>
+          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" value={recipientName} onChange={(e) => setRecipientName(e.target.value)} required />
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Sender name</span>
+          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Optional for now" />
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Occasion</span>
+          <input className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-zinc-100" value={occasion} onChange={(e) => setOccasion(e.target.value)} placeholder="Anniversary, birthday..." />
+        </label>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-zinc-100">Photo manager</p>
+            <p className="mt-1 text-xs text-zinc-500">Use 6-30 photos. Upload many at once, then reorder and add captions.</p>
           </div>
-        ))}
-      </div>
+          <label className="cursor-pointer rounded-full border border-amber-300/35 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-amber-200">
+            Add many photos
+            <input type="file" accept="image/*" multiple hidden onChange={(e) => addFiles(e.target.files)} />
+          </label>
+        </div>
 
-      <div className="flex flex-col gap-4 md:grid md:grid-cols-3 md:gap-4">
-        <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-          <span className="text-sm font-medium text-zinc-300">Ảnh bìa (Cover)</span>
-          <input
-            type="file"
-            accept="image/*"
-            className={fileInputClass}
-            onChange={(e) => setCover(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-          <span className="text-sm font-medium text-zinc-300">Video</span>
-          <input
-            type="file"
-            accept="video/*"
-            className={fileInputClass}
-            onChange={(e) => setVideo(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <label className="flex min-h-[5.5rem] flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900/40 p-3">
-          <span className="text-sm font-medium text-zinc-300">Nhạc nền (Audio)</span>
-          <input
-            type="file"
-            accept="audio/*"
-            className={fileInputClass}
-            onChange={(e) => setAudio(e.target.files?.[0] ?? null)}
-          />
-        </label>
-      </div>
+        <div className="mt-4 space-y-4">
+          {photos.map((photo, index) => (
+            <div key={index} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <div className="grid gap-3 lg:grid-cols-[140px_1fr_auto]">
+                <div className="relative min-h-36 overflow-hidden rounded-xl bg-zinc-950">
+                  {photo.file ? (
+                    <Image src={URL.createObjectURL(photo.file)} alt="" fill className="object-cover" unoptimized />
+                  ) : (
+                    <div className="flex h-full min-h-36 items-center justify-center text-xs text-zinc-600">No photo</div>
+                  )}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input type="file" accept="image/*" className={`${fileInputClass} md:col-span-2`} onChange={(e) => updatePhoto(index, { file: e.target.files?.[0] ?? null })} />
+                  <input className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm" placeholder="Title" value={photo.title} onChange={(e) => updatePhoto(index, { title: e.target.value })} />
+                  <select className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm" value={photo.chapter} onChange={(e) => updatePhoto(index, { chapter: e.target.value })}>
+                    {chapterOptions.map((chapter) => (
+                      <option key={chapter}>{chapter}</option>
+                    ))}
+                  </select>
+                  <textarea className="min-h-20 rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" placeholder={`Caption ${index + 1}`} value={photo.caption} onChange={(e) => updatePhoto(index, { caption: e.target.value })} />
+                  <input className="rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm md:col-span-2" placeholder="Hidden note (optional)" value={photo.hidden_note} onChange={(e) => updatePhoto(index, { hidden_note: e.target.value })} />
+                  <label className="flex items-center gap-2 text-sm text-zinc-400">
+                    <input type="checkbox" checked={photo.highlight} onChange={(e) => updatePhoto(index, { highlight: e.target.checked })} />
+                    Highlight photo
+                  </label>
+                </div>
+                <div className="flex gap-2 lg:flex-col">
+                  <button type="button" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" onClick={() => movePhoto(index, -1)}>Up</button>
+                  <button type="button" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm" onClick={() => movePhoto(index, 1)}>Down</button>
+                  <button type="button" className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-300" onClick={() => removePhoto(index)}>Remove</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-      {missingHint ? <p className="text-sm text-amber-300">{missingHint}</p> : null}
-      {error ? <p className="rounded-md border border-red-500/40 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</p> : null}
-
-      <div className="relative z-10 pt-2">
-        <button
-          type="submit"
-          disabled={!canSubmit || submitting}
-          className="rounded-md bg-white px-4 py-2 text-black disabled:pointer-events-none disabled:opacity-45"
-        >
-          {submitting ? "Đang tạo..." : "Create Album"}
+        <button type="button" onClick={() => addPhotoSlot()} disabled={photos.length >= 30} className="mt-4 rounded-full border border-zinc-700 px-5 py-3 text-sm text-zinc-200 disabled:opacity-40">
+          Add empty slot
         </button>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-3">
+        <label className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Cover image (optional)</span>
+          <input type="file" accept="image/*" className={fileInputClass} onChange={(e) => setCover(e.target.files?.[0] ?? null)} />
+        </label>
+        <label className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Final video (optional)</span>
+          <input type="file" accept="video/*" className={fileInputClass} onChange={(e) => setVideo(e.target.files?.[0] ?? null)} />
+        </label>
+        <label className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4">
+          <span className="text-xs uppercase tracking-widest text-zinc-400">Music (optional)</span>
+          <input type="file" accept="audio/*" className={fileInputClass} onChange={(e) => setAudio(e.target.files?.[0] ?? null)} />
+        </label>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4 text-sm text-zinc-400">
+        Ready check: {photoCount}/30 photos selected. Minimum for a premium album is 6 photos; recommended is 12-24.
+      </div>
+
+      {error ? <p className="rounded-xl border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</p> : null}
+
+      <button type="submit" disabled={!canSubmit || submitting} className="w-full rounded-full bg-white px-6 py-4 text-sm font-bold uppercase tracking-widest text-black disabled:opacity-40">
+        {submitting ? "Creating..." : "Create Memora album"}
+      </button>
+
       {albumUrl ? (
-        <div className="rounded-lg border border-zinc-800 p-3 space-y-2">
-          <p className="text-sm text-zinc-300">Album URL</p>
-          <p className="text-sky-400 break-all">{albumUrl}</p>
-          {qrDataUrl ? (
-            <Image
-              src={qrDataUrl}
-              alt="Album QR code"
-              width={160}
-              height={160}
-              className="w-40 h-40 bg-white p-2 rounded"
-              unoptimized
-            />
-          ) : null}
+        <div className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-950/45 p-4 md:grid-cols-[180px_1fr]">
+          {qrDataUrl ? <Image src={qrDataUrl} alt="Album QR code" width={180} height={180} className="rounded-xl bg-white p-2" unoptimized /> : null}
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="text-zinc-500">Classic album link</p>
+              <p className="break-all text-sky-300">{albumUrl}</p>
+            </div>
+            <div>
+              <p className="text-zinc-500">Customer setup link</p>
+              <p className="break-all text-amber-200">{setupUrl}</p>
+            </div>
+          </div>
         </div>
       ) : null}
     </form>
